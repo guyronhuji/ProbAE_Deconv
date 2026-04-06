@@ -28,6 +28,8 @@ NOTEBOOK_DIR=""
 GPU_PARALLEL="auto"
 GPU_MEM_PER_JOB_GB="12"
 DATASET_PATH_OVERRIDE=""
+AUTO_PREPARE_DATASET=1
+DATASET_FORCE_DOWNLOAD=0
 
 usage() {
   cat <<'EOF'
@@ -41,6 +43,9 @@ Options:
   --notebook-dir <path>      Override notebook_output_dir in config
   --downsample-factor <int>  Optional quick-test downsampling (e.g. 5, 10, 20)
   --dataset-path <path>      Override dataset.input_path in suite config
+  --auto-prepare-dataset     Auto-download/prepare Levine32 if dataset file is missing (default)
+  --no-auto-prepare-dataset  Disable automatic dataset preparation
+  --dataset-force-download   Force dataset redownload when auto-preparing
   --gpu-parallel <auto|N>    GPU multiprocessing workers (default: auto)
   --gpu-mem-per-job-gb <N>   VRAM budget per parallel GPU job for auto mode (default: 12)
   --send                     Create tar.gz and run `runpodctl send` at end
@@ -57,6 +62,9 @@ while [[ $# -gt 0 ]]; do
     --notebook-dir) NOTEBOOK_DIR="$2"; shift 2 ;;
     --downsample-factor) DOWNSAMPLE_FACTOR="$2"; shift 2 ;;
     --dataset-path) DATASET_PATH_OVERRIDE="$2"; shift 2 ;;
+    --auto-prepare-dataset) AUTO_PREPARE_DATASET=1; shift ;;
+    --no-auto-prepare-dataset) AUTO_PREPARE_DATASET=0; shift ;;
+    --dataset-force-download) DATASET_FORCE_DOWNLOAD=1; shift ;;
     --gpu-parallel) GPU_PARALLEL="$2"; shift 2 ;;
     --gpu-mem-per-job-gb) GPU_MEM_PER_JOB_GB="$2"; shift 2 ;;
     --send) SEND_RESULTS=1; shift ;;
@@ -184,6 +192,25 @@ else:
     print((p if p.is_absolute() else repo_root / p).resolve())
 PY
 )"
+
+DATASET_NAME="$(
+python3 - <<PY
+from pathlib import Path
+import yaml
+cfg = yaml.safe_load(Path("${TMP_CFG}").read_text(encoding="utf-8")) or {}
+print(str(cfg.get("dataset", {}).get("name", "")).strip().lower())
+PY
+)"
+
+if [ "${AUTO_PREPARE_DATASET}" -eq 1 ] && [ "${DATASET_NAME}" = "levine32" ] && [ -n "${DATASET_ABS_PATH}" ] && [ ! -f "${DATASET_ABS_PATH}" ]; then
+  echo ""
+  echo "Dataset not found; auto-preparing Levine32 ..."
+  PREP_CMD=(bash runpod/prepare_dataset.sh --output "${DATASET_ABS_PATH}" --log-path "${REPO_ROOT}/data/levine32_preprocessing_log.json")
+  if [ "${DATASET_FORCE_DOWNLOAD}" -eq 1 ]; then
+    PREP_CMD+=(--force-download --overwrite)
+  fi
+  "${PREP_CMD[@]}"
+fi
 
 if [ -z "${DATASET_ABS_PATH}" ] || [ ! -f "${DATASET_ABS_PATH}" ]; then
   echo ""

@@ -17,7 +17,7 @@ REPO_DIR="${REPO_DIR:-/workspace/ProbAE_Deconv}"
 REPO_URL="${REPO_URL:-https://github.com/guyronhuji/ProbAE_Deconv.git}"
 REPO_REF="${REPO_REF:-}"
 
-echo "=== [1/4] Prepare repo ==="
+echo "=== [1/5] Prepare repo ==="
 if [ ! -d "${REPO_DIR}/.git" ]; then
   git clone "${REPO_URL}" "${REPO_DIR}"
 else
@@ -47,6 +47,7 @@ echo ""
 echo "=== [3/5] Install package + dependencies ==="
 python3 -m pip install --upgrade pip
 python3 -m pip install -e ".[extras]"
+python3 -m pip install PyCytoData
 
 echo ""
 echo "=== [4/5] Verify runtime ==="
@@ -63,4 +64,5 @@ echo ""
 echo "=== [5/5] Done ==="
 echo "Next:"
 echo "  cd ${REPO_DIR}"
+echo "  bash runpod/prepare_dataset.sh"
 echo "  bash runpod/run_suite.sh --config configs/experiment_suite.yaml --send"

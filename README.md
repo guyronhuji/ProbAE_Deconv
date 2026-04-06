@@ -86,7 +86,20 @@ cd ProbAE_Deconv
 bash runpod/setup_pod.sh
 ```
 
-Then copy your dataset into the pod at:
+Prepare the dataset directly in the pod (recommended):
+
+```bash
+cd /workspace/ProbAE_Deconv
+bash runpod/prepare_dataset.sh --output data/levine32_processed.h5ad
+```
+
+This writes:
+
+```bash
+/workspace/ProbAE_Deconv/data/levine32_processed.h5ad
+```
+
+If you prefer, you can copy a local dataset file into the pod at:
 
 ```bash
 /workspace/ProbAE_Deconv/data/levine32_processed.h5ad
@@ -116,6 +129,8 @@ Useful options:
 - `--tag myrun`
 - `--downsample-factor 10`
 - `--dataset-path /workspace/ProbAE_Deconv/data/levine32_processed.h5ad`
+- `--auto-prepare-dataset` (default, auto-download Levine32 if missing)
+- `--dataset-force-download` (redownload dataset during auto-prepare)
 - `--output-dir outputs/my_runpod_run`
 - `--gpu-parallel auto` (or `--gpu-parallel 2`)
 - `--gpu-mem-per-job-gb 12` (used by `--gpu-parallel auto`)
