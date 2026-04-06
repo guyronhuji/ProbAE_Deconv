@@ -1,0 +1,126 @@
+seed: 42
+output_dir: outputs/experiment_suite
+notebook_output_dir: notebooks/experiment_suite
+show_progress: true
+show_run_logs: true
+show_training_progress: true
+training_progress_level: epoch  # epoch or batch
+training_progress_leave: false
+cpu_multiprocessing_workers: 8
+cpu_parallel_methods: [nmf, classical_archetypes]
+
+# Primary dataset (Levine32)
+dataset:
+  name: levine32
+  input_path: data/levine32_processed.h5ad
+  # Optional speedup for testing:
+  # downsample_factor: 5  # keeps ~1/5 cells in each split
+  # downsample_fraction: 0.2  # alternative to factor
+  marker_columns: null
+  label_column: label
+  cell_id_column: cell_id
+  val_fraction: 0.15
+  test_fraction: 0.15
+
+preprocessing:
+  transform: none
+  arcsinh_cofactor: 5.0
+  normalization: zscore
+  clip_min: null
+  clip_max: null
+
+# Main reproducibility seeds (used for core methods where feasible)
+seeds: [13, 17, 23]
+
+sweeps:
+  k_values: [8, 10,12,14,16]
+  latent_dims: [8, 10,12,14,16]
+
+methods:
+  nmf:
+    max_iter: 120
+
+  classical_archetypes:
+    n_iters: 40
+    pg_steps: 80
+    lr: 0.1
+
+  deterministic_archetypal_ae:
+    device: mps
+    hidden_dims: [128, 64]
+    dropout: 0.1
+    batch_size: 256
+    lr: 3.0e-4
+    weight_decay: 1.0e-4
+    max_epochs: 80
+    patience: 12
+    grad_clip: 1.0
+    entropy_reg_weight: 1.0e-3
+    diversity_reg_weight: 1.0e-3
+
+  probabilistic_archetypal_ae:
+    device: mps
+    hidden_dims: [128, 64]
+    dropout: 0.1
+    batch_size: 256
+    lr: 3.0e-4
+    weight_decay: 1.0e-4
+    max_epochs: 80
+    patience: 12
+    grad_clip: 1.0
+    entropy_reg_weight: 1.0e-3
+    diversity_reg_weight: 1.0e-3
+    variance_reg_weight: 1.0e-5
+
+  ae:
+    device: mps
+    hidden_dims: [128, 64]
+    dropout: 0.1
+    batch_size: 256
+    lr: 3.0e-4
+    weight_decay: 1.0e-4
+    max_epochs: 80
+    patience: 12
+    grad_clip: 1.0
+
+  vae:
+    device: mps
+    hidden_dims: [128, 64]
+    dropout: 0.1
+    batch_size: 256
+    lr: 3.0e-4
+    weight_decay: 1.0e-4
+    max_epochs: 80
+    patience: 12
+    grad_clip: 1.0
+    beta: 1.0
+
+# Optional marker-group annotations for enrichment in component biology.
+# Example:
+# marker_groups:
+#   T_cell_markers: [CD3, CD4, CD8]
+#   Myeloid_markers: [CD14, CD11b]
+marker_groups: {}
+
+# Secondary dataset scaffold.
+secondary_dataset:
+  enabled: false
+  dataset:
+    name: secondary
+    input_path: data/secondary_dataset_placeholder.csv
+    marker_columns: null
+    label_column: label
+    cell_id_column: cell_id
+    val_fraction: 0.15
+    test_fraction: 0.15
+  method_order:
+    - nmf
+    - classical_archetypes
+    - deterministic_archetypal_ae
+    - probabilistic_archetypal_ae
+  seeds: [13]
+  k_values: [4, 6, 8, 10]
+
+# Optional supplementary models (DeepSets/Transformer/LSTM hooks).
+auxiliary_models:
+  enabled: false

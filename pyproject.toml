@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cytof_archetypes"
+version = "0.1.0"
+description = "Probabilistic archetypal autoencoder toolkit for CyTOF (Levine32-first)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "cytof_archetypes contributors" }]
+dependencies = [
+  "numpy>=1.24",
+  "pandas>=2.0",
+  "PyYAML>=6.0",
+  "torch>=2.1",
+  "scikit-learn>=1.3",
+  "scipy>=1.10",
+  "matplotlib>=3.7",
+  "nbformat>=5.9",
+]
+
+[project.optional-dependencies]
+extras = [
+  "anndata>=0.10",
+  "umap-learn>=0.5",
+]
+dev = [
+  "pytest>=8.0",
+]
+
+[project.scripts]
+cytof-archetypes-train = "cytof_archetypes.cli:train_cli"
+cytof-archetypes-evaluate = "cytof_archetypes.cli:evaluate_cli"
+cytof-archetypes-generate-notebooks = "cytof_archetypes.cli:generate_notebooks_cli"
+cytof-archetypes-demo = "cytof_archetypes.cli:demo_cli"
+cytof-archetypes-run-suite = "cytof_archetypes.cli:run_suite_cli"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
