@@ -10,6 +10,7 @@
 #   REPO_URL   (default: https://github.com/guyronhuji/ProbAE_Deconv.git)
 #   REPO_REF   (branch/tag/commit to checkout; optional)
 #   VENV_DIR   (default: <REPO_DIR>/.venv)
+#   SETUP_LOG_PATH (optional; append setup logs to this file)
 # ============================================================
 
 set -euo pipefail
@@ -18,6 +19,16 @@ REPO_DIR="${REPO_DIR:-/workspace/ProbAE_Deconv}"
 REPO_URL="${REPO_URL:-https://github.com/guyronhuji/ProbAE_Deconv.git}"
 REPO_REF="${REPO_REF:-}"
 VENV_DIR="${VENV_DIR:-${REPO_DIR}/.venv}"
+SETUP_LOG_PATH="${SETUP_LOG_PATH:-}"
+
+if [ -n "${SETUP_LOG_PATH}" ]; then
+  mkdir -p "$(dirname "${SETUP_LOG_PATH}")"
+  touch "${SETUP_LOG_PATH}"
+  exec > >(tee -a "${SETUP_LOG_PATH}") 2>&1
+  echo "Logging setup output to: ${SETUP_LOG_PATH}"
+  echo "Started at: $(date -Iseconds)"
+  echo ""
+fi
 
 as_root() {
   if [ "$(id -u)" -eq 0 ]; then
@@ -28,6 +39,15 @@ as_root() {
     echo "ERROR: command requires root privileges, but sudo is not available: $*"
     exit 1
   fi
+}
+
+wait_for_apt_processes() {
+  local waited=0
+  while pgrep -x apt >/dev/null 2>&1 || pgrep -x apt-get >/dev/null 2>&1 || pgrep -x dpkg >/dev/null 2>&1; do
+    echo "Waiting for apt/dpkg lock holders to finish (${waited}s elapsed) ..."
+    sleep 5
+    waited=$((waited + 5))
+  done
 }
 
 echo "=== [1/5] Prepare repo ==="
@@ -46,6 +66,7 @@ fi
 echo ""
 echo "=== [2/5] Install system tools ==="
 if command -v apt-get >/dev/null 2>&1; then
+  wait_for_apt_processes
   as_root apt-get update
   DEBIAN_FRONTEND=noninteractive as_root apt-get install -y git python3 python3-pip python3-venv tmux
 else

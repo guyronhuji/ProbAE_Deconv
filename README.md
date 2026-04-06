@@ -216,6 +216,8 @@ Useful options:
 - `--name probae-<custom-name>`
 - `--repo-ref main`
 - `--subscription <SUBSCRIPTION_ID>`
+- `--bootstrap-log-path /home/azureuser/probae_bootstrap.log`
+- `--local-bootstrap-log-dir outputs/azure_bootstrap_logs`
 - `--no-bootstrap` (create VM only; skip setup)
 - `--no-gpu-driver` (skip NVIDIA extension install)
 
@@ -226,6 +228,16 @@ ssh azureuser@<PUBLIC_IP>
 cd ~/ProbAE_Deconv
 source .venv/bin/activate
 bash runpod/run_suite.sh --config configs/experiment_suite.yaml --no-send --gpu-parallel auto
+```
+
+Check bootstrap/setup logs:
+
+```bash
+# on the VM
+tail -f ~/probae_bootstrap.log
+
+# on local machine (saved by deploy script)
+ls -1 outputs/azure_bootstrap_logs/
 ```
 
 ### 2) Azure ML command job

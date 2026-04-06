@@ -23,6 +23,9 @@ REPO_REF=""
 TAGS="project=probae-deconv"
 AUTO_BOOTSTRAP=1
 INSTALL_GPU_DRIVER=1
+BOOTSTRAP_LOG_PATH=""
+LOCAL_BOOTSTRAP_LOG_DIR="./outputs/azure_bootstrap_logs"
+SAVE_LOCAL_BOOTSTRAP_LOG=1
 
 usage() {
   cat <<'EOF'
@@ -44,6 +47,9 @@ Optional:
   --repo-url <url>              Repo URL to clone
   --repo-ref <git-ref>          Branch/tag/commit to checkout
   --tags "<k=v ...>"            Azure tags passed to `az vm create`
+  --bootstrap-log-path <path>   Log file path on VM for bootstrap output
+  --local-bootstrap-log-dir <path> Local directory to save run-command output
+  --no-local-bootstrap-log      Do not save local bootstrap log
   --no-bootstrap                Skip remote setup_vm bootstrap
   --no-gpu-driver               Skip NVIDIA driver extension install
   -h, --help                    Show this help
@@ -73,6 +79,9 @@ while [[ $# -gt 0 ]]; do
     --repo-url) REPO_URL="$2"; shift 2 ;;
     --repo-ref) REPO_REF="$2"; shift 2 ;;
     --tags) TAGS="$2"; shift 2 ;;
+    --bootstrap-log-path) BOOTSTRAP_LOG_PATH="$2"; shift 2 ;;
+    --local-bootstrap-log-dir) LOCAL_BOOTSTRAP_LOG_DIR="$2"; shift 2 ;;
+    --no-local-bootstrap-log) SAVE_LOCAL_BOOTSTRAP_LOG=0; shift ;;
     --no-bootstrap) AUTO_BOOTSTRAP=0; shift ;;
     --no-gpu-driver) INSTALL_GPU_DRIVER=0; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -97,6 +106,9 @@ fi
 
 if [ -z "${VM_NAME}" ]; then
   VM_NAME="probae-$(date +%Y%m%d-%H%M%S)"
+fi
+if [ -z "${BOOTSTRAP_LOG_PATH}" ]; then
+  BOOTSTRAP_LOG_PATH="/home/${ADMIN_USERNAME}/probae_bootstrap.log"
 fi
 
 SSH_KEY_VALUE="${SSH_PUBLIC_KEY}"
@@ -174,6 +186,12 @@ if [ "${AUTO_BOOTSTRAP}" -eq 1 ]; then
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
+BOOTSTRAP_LOG_PATH="${BOOTSTRAP_LOG_PATH}"
+mkdir -p "\$(dirname "\${BOOTSTRAP_LOG_PATH}")"
+touch "\${BOOTSTRAP_LOG_PATH}"
+exec >> "\${BOOTSTRAP_LOG_PATH}" 2>&1
+echo "=== ProbAE bootstrap start: \$(date -Iseconds) ==="
+
 if command -v apt-get >/dev/null 2>&1; then
   apt-get update
   apt-get install -y git python3 python3-pip python3-venv tmux
@@ -192,14 +210,54 @@ fi
 
 REPO_DIR="\${REPO_DIR}" REPO_URL="${REPO_URL}" REPO_REF="${REPO_REF}" VENV_DIR="\${REPO_DIR}/.venv" bash azure/setup_vm.sh
 chown -R "${ADMIN_USERNAME}:${ADMIN_USERNAME}" "\${REPO_DIR}"
+chown "${ADMIN_USERNAME}:${ADMIN_USERNAME}" "\${BOOTSTRAP_LOG_PATH}" || true
+echo "=== ProbAE bootstrap done: \$(date -Iseconds) ==="
 EOF
 )"
 
+  RUN_COMMAND_JSON="$(
   az vm run-command invoke \
     --resource-group "${RESOURCE_GROUP}" \
     --name "${VM_NAME}" \
     --command-id RunShellScript \
-    --scripts "${BOOTSTRAP_SCRIPT}" >/dev/null
+    --scripts "${BOOTSTRAP_SCRIPT}" \
+    -o json
+  )"
+
+  LOCAL_BOOTSTRAP_LOG_FILE=""
+  if [ "${SAVE_LOCAL_BOOTSTRAP_LOG}" -eq 1 ]; then
+    mkdir -p "${LOCAL_BOOTSTRAP_LOG_DIR}"
+    LOCAL_BOOTSTRAP_LOG_FILE="${LOCAL_BOOTSTRAP_LOG_DIR}/${VM_NAME}_bootstrap_$(date +%Y%m%d-%H%M%S).log"
+    printf '%s' "${RUN_COMMAND_JSON}" | python3 - "${LOCAL_BOOTSTRAP_LOG_FILE}" <<'PY'
+import json
+import sys
+
+out_path = sys.argv[1]
+raw = sys.stdin.read().strip()
+
+text = ""
+try:
+    doc = json.loads(raw) if raw else {}
+    messages = []
+    for item in doc.get("value", []):
+        if isinstance(item, dict):
+            msg = str(item.get("message", "")).strip()
+            if msg:
+                messages.append(msg)
+    text = "\n\n".join(messages)
+except Exception:
+    text = raw
+
+if not text:
+    text = "(no output returned by az vm run-command invoke)"
+
+with open(out_path, "w", encoding="utf-8") as handle:
+    handle.write(text)
+    if not text.endswith("\n"):
+        handle.write("\n")
+PY
+  fi
+
   echo "Bootstrap completed."
 fi
 
@@ -210,9 +268,18 @@ echo "  vm_name:        ${VM_NAME}"
 echo "  location:       ${LOCATION}"
 echo "  size:           ${VM_SIZE}"
 echo "  public_ip:      ${PUBLIC_IP}"
+if [ "${AUTO_BOOTSTRAP}" -eq 1 ]; then
+  echo "  vm_log:         ${BOOTSTRAP_LOG_PATH}"
+  if [ "${SAVE_LOCAL_BOOTSTRAP_LOG}" -eq 1 ] && [ -n "${LOCAL_BOOTSTRAP_LOG_FILE}" ]; then
+    echo "  local_log:      ${LOCAL_BOOTSTRAP_LOG_FILE}"
+  fi
+fi
 echo ""
 echo "Connect:"
 echo "  ssh ${ADMIN_USERNAME}@${PUBLIC_IP}"
+if [ "${AUTO_BOOTSTRAP}" -eq 1 ]; then
+  echo "  tail -f ${BOOTSTRAP_LOG_PATH}"
+fi
 echo ""
 echo "Run suite on VM:"
 echo "  cd ~/ProbAE_Deconv"
