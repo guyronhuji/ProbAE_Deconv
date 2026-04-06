@@ -240,6 +240,9 @@ tail -f ~/probae_bootstrap.log
 ls -1 outputs/azure_bootstrap_logs/
 ```
 
+`azure/setup_vm.sh` now fast-forward syncs from git by default (`GIT_SYNC=ff-only`).  
+Use `GIT_SYNC=none` to skip pulling.
+
 ### 2) Azure ML command job
 
 Prerequisites:

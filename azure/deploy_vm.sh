@@ -208,7 +208,7 @@ if [ -n "${REPO_REF}" ]; then
   git checkout "${REPO_REF}"
 fi
 
-REPO_DIR="\${REPO_DIR}" REPO_URL="${REPO_URL}" REPO_REF="${REPO_REF}" VENV_DIR="\${REPO_DIR}/.venv" bash azure/setup_vm.sh
+REPO_DIR="\${REPO_DIR}" REPO_URL="${REPO_URL}" REPO_REF="${REPO_REF}" VENV_DIR="\${REPO_DIR}/.venv" GIT_SYNC="ff-only" bash azure/setup_vm.sh
 chown -R "${ADMIN_USERNAME}:${ADMIN_USERNAME}" "\${REPO_DIR}"
 chown "${ADMIN_USERNAME}:${ADMIN_USERNAME}" "\${BOOTSTRAP_LOG_PATH}" || true
 echo "=== ProbAE bootstrap done: \$(date -Iseconds) ==="

@@ -11,6 +11,7 @@
 #   REPO_REF   (branch/tag/commit to checkout; optional)
 #   VENV_DIR   (default: <REPO_DIR>/.venv)
 #   SETUP_LOG_PATH (optional; append setup logs to this file)
+#   GIT_SYNC   (default: ff-only; one of: ff-only, none)
 # ============================================================
 
 set -euo pipefail
@@ -20,6 +21,7 @@ REPO_URL="${REPO_URL:-https://github.com/guyronhuji/ProbAE_Deconv.git}"
 REPO_REF="${REPO_REF:-}"
 VENV_DIR="${VENV_DIR:-${REPO_DIR}/.venv}"
 SETUP_LOG_PATH="${SETUP_LOG_PATH:-}"
+GIT_SYNC="${GIT_SYNC:-ff-only}"
 
 if [ -n "${SETUP_LOG_PATH}" ]; then
   mkdir -p "$(dirname "${SETUP_LOG_PATH}")"
@@ -50,6 +52,44 @@ wait_for_apt_processes() {
   done
 }
 
+repo_is_dirty() {
+  if ! git diff --quiet || ! git diff --cached --quiet; then
+    return 0
+  fi
+  return 1
+}
+
+sync_repo_ff_only() {
+  git fetch --all --tags
+
+  if [ -n "${REPO_REF}" ]; then
+    if git show-ref --verify --quiet "refs/remotes/origin/${REPO_REF}"; then
+      if git show-ref --verify --quiet "refs/heads/${REPO_REF}"; then
+        git checkout "${REPO_REF}"
+      else
+        git checkout -B "${REPO_REF}" "origin/${REPO_REF}"
+      fi
+      git pull --ff-only origin "${REPO_REF}"
+    else
+      git checkout "${REPO_REF}"
+    fi
+    return
+  fi
+
+  local current_branch
+  current_branch="$(git symbolic-ref --short -q HEAD || true)"
+  if [ -z "${current_branch}" ]; then
+    echo "Detached HEAD with no REPO_REF provided; skipping pull."
+    return
+  fi
+
+  if git rev-parse --abbrev-ref --symbolic-full-name "@{u}" >/dev/null 2>&1; then
+    git pull --ff-only
+  else
+    echo "No upstream configured for branch '${current_branch}'; skipping pull."
+  fi
+}
+
 echo "=== [1/5] Prepare repo ==="
 if [ ! -d "${REPO_DIR}/.git" ]; then
   git clone "${REPO_URL}" "${REPO_DIR}"
@@ -58,9 +98,22 @@ else
 fi
 
 cd "${REPO_DIR}"
-if [ -n "${REPO_REF}" ]; then
-  git fetch --all --tags
-  git checkout "${REPO_REF}"
+if [ "${GIT_SYNC}" = "ff-only" ]; then
+  if repo_is_dirty; then
+    echo "Repo has local uncommitted changes; skipping git pull for safety."
+    echo "Commit/stash changes, then rerun setup to sync from origin."
+  else
+    sync_repo_ff_only
+  fi
+elif [ "${GIT_SYNC}" = "none" ]; then
+  echo "GIT_SYNC=none, skipping git sync."
+  if [ -n "${REPO_REF}" ]; then
+    git fetch --all --tags
+    git checkout "${REPO_REF}"
+  fi
+else
+  echo "ERROR: invalid GIT_SYNC='${GIT_SYNC}'. Expected 'ff-only' or 'none'."
+  exit 1
 fi
 
 echo ""
