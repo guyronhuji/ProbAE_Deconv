@@ -3,29 +3,22 @@
 # One-time setup inside a RunPod pod for ProbAE_Deconv.
 #
 # Usage (inside pod):
-#   export REPO_URL="https://github.com/<you>/<repo>.git"   # required on first run
 #   bash runpod/setup_pod.sh
 #
 # Optional env vars:
 #   REPO_DIR   (default: /workspace/ProbAE_Deconv)
-#   REPO_URL   (required if REPO_DIR does not exist yet)
+#   REPO_URL   (default: https://github.com/guyronhuji/ProbAE_Deconv.git)
 #   REPO_REF   (branch/tag/commit to checkout; optional)
 # ============================================================
 
 set -euo pipefail
 
 REPO_DIR="${REPO_DIR:-/workspace/ProbAE_Deconv}"
-REPO_URL="${REPO_URL:-}"
+REPO_URL="${REPO_URL:-https://github.com/guyronhuji/ProbAE_Deconv.git}"
 REPO_REF="${REPO_REF:-}"
 
 echo "=== [1/4] Prepare repo ==="
 if [ ! -d "${REPO_DIR}/.git" ]; then
-  if [ -z "${REPO_URL}" ]; then
-    echo "ERROR: REPO_URL is required for first-time setup."
-    echo "Example:"
-    echo "  REPO_URL=https://github.com/<you>/<repo>.git bash runpod/setup_pod.sh"
-    exit 1
-  fi
   git clone "${REPO_URL}" "${REPO_DIR}"
 else
   echo "Repo already exists at ${REPO_DIR}"
@@ -58,4 +51,3 @@ echo "=== [4/4] Done ==="
 echo "Next:"
 echo "  cd ${REPO_DIR}"
 echo "  bash runpod/run_suite.sh --config configs/experiment_suite.yaml --send"
-

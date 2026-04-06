@@ -63,9 +63,15 @@ Add your SSH public key in RunPod console (`Settings -> SSH Public Keys`), then 
 
 ```bash
 cd /workspace
-git clone <YOUR_REPO_URL> ProbAE_Deconv
+git clone https://github.com/guyronhuji/ProbAE_Deconv.git ProbAE_Deconv
 cd ProbAE_Deconv
 bash runpod/setup_pod.sh
+```
+
+Then copy your dataset into the pod at:
+
+```bash
+/workspace/ProbAE_Deconv/data/levine32_processed.h5ad
 ```
 
 ### 3) Run your suite config inside pod
