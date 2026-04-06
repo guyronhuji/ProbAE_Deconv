@@ -57,7 +57,25 @@ cytof-archetypes-run-suite --config configs/experiment_suite.yaml
 brew install runpod/runpodctl/runpodctl
 ```
 
-Add your SSH public key in RunPod console (`Settings -> SSH Public Keys`), then start a pod from the RunPod UI.
+Add your SSH public key in RunPod console (`Settings -> SSH Public Keys`).
+
+Then create a pod from this repo:
+
+```bash
+bash runpod/create_pod.sh
+```
+
+If you prefer, keep your API key in `.runpodkey` (ignored by git), either as:
+
+```text
+apiKey <YOUR_KEY>
+```
+
+or just:
+
+```text
+<YOUR_KEY>
+```
 
 ### 2) One-time setup inside pod
 

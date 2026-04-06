@@ -21,6 +21,7 @@ data/*
 !data/.gitkeep
 notebooks/.ipynb_checkpoints/
 .ipynb_checkpoints/
+.runpodkey
 
 # IDE
 .idea/
