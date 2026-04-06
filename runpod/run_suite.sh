@@ -27,6 +27,7 @@ OUTPUT_DIR=""
 NOTEBOOK_DIR=""
 GPU_PARALLEL="auto"
 GPU_MEM_PER_JOB_GB="12"
+DATASET_PATH_OVERRIDE=""
 
 usage() {
   cat <<'EOF'
@@ -39,6 +40,7 @@ Options:
   --output-dir <path>        Override output_dir in config
   --notebook-dir <path>      Override notebook_output_dir in config
   --downsample-factor <int>  Optional quick-test downsampling (e.g. 5, 10, 20)
+  --dataset-path <path>      Override dataset.input_path in suite config
   --gpu-parallel <auto|N>    GPU multiprocessing workers (default: auto)
   --gpu-mem-per-job-gb <N>   VRAM budget per parallel GPU job for auto mode (default: 12)
   --send                     Create tar.gz and run `runpodctl send` at end
@@ -54,6 +56,7 @@ while [[ $# -gt 0 ]]; do
     --output-dir) OUTPUT_DIR="$2"; shift 2 ;;
     --notebook-dir) NOTEBOOK_DIR="$2"; shift 2 ;;
     --downsample-factor) DOWNSAMPLE_FACTOR="$2"; shift 2 ;;
+    --dataset-path) DATASET_PATH_OVERRIDE="$2"; shift 2 ;;
     --gpu-parallel) GPU_PARALLEL="$2"; shift 2 ;;
     --gpu-mem-per-job-gb) GPU_MEM_PER_JOB_GB="$2"; shift 2 ;;
     --send) SEND_RESULTS=1; shift ;;
@@ -153,20 +156,62 @@ ds = cfg.setdefault("dataset", {})
 raw_ds = "${DOWNSAMPLE_FACTOR}".strip()
 if raw_ds:
     ds["downsample_factor"] = int(raw_ds)
+raw_dataset_path = "${DATASET_PATH_OVERRIDE}".strip()
+if raw_dataset_path:
+    ds["input_path"] = raw_dataset_path
 
 Path("${TMP_CFG}").write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
 print("Wrote:", "${TMP_CFG}")
 print("output_dir:", cfg["output_dir"])
 print("notebook_output_dir:", cfg["notebook_output_dir"])
+print("dataset_input_path:", cfg.get("dataset", {}).get("input_path"))
 print("downsample_factor:", cfg.get("dataset", {}).get("downsample_factor"))
 print("gpu_multiprocessing_workers:", cfg.get("gpu_multiprocessing_workers"))
 print("show_training_progress:", cfg.get("show_training_progress"))
 PY
 
+DATASET_ABS_PATH="$(
+python3 - <<PY
+from pathlib import Path
+import yaml
+cfg = yaml.safe_load(Path("${TMP_CFG}").read_text(encoding="utf-8")) or {}
+repo_root = Path("${REPO_ROOT}")
+raw = str(cfg.get("dataset", {}).get("input_path", "")).strip()
+if not raw:
+    print("")
+else:
+    p = Path(raw)
+    print((p if p.is_absolute() else repo_root / p).resolve())
+PY
+)"
+
+if [ -z "${DATASET_ABS_PATH}" ] || [ ! -f "${DATASET_ABS_PATH}" ]; then
+  echo ""
+  echo "ERROR: Dataset file not found:"
+  echo "  ${DATASET_ABS_PATH:-<empty path in config>}"
+  echo ""
+  echo "Fix in one of these ways:"
+  echo "1) Put dataset in default location inside pod:"
+  echo "   /workspace/ProbAE_Deconv/data/levine32_processed.h5ad"
+  echo ""
+  echo "2) Run with explicit dataset path:"
+  echo "   bash runpod/run_suite.sh --config ${CONFIG_PATH} --dataset-path /path/to/levine32_processed.h5ad --send"
+  echo ""
+  echo "Transfer example using runpodctl:"
+  echo "  On your local machine:"
+  echo "    cd /Users/ronguy/Dropbox/Work/CyTOF/Experiments/ProbAE_Deconv"
+  echo "    runpodctl send data/levine32_processed.h5ad"
+  echo "  In the pod:"
+  echo "    cd /workspace/ProbAE_Deconv/data"
+  echo "    runpodctl receive <TRANSFER_CODE>"
+  exit 1
+fi
+
 echo ""
 echo "Running full suite ..."
 echo "  repo:   ${REPO_ROOT}"
 echo "  config: ${TMP_CFG}"
+echo "  data:   ${DATASET_ABS_PATH}"
 echo "  log:    ${LOG_DIR}/runpod_stdout.log"
 echo ""
 

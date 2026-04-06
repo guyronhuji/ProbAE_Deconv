@@ -92,6 +92,18 @@ Then copy your dataset into the pod at:
 /workspace/ProbAE_Deconv/data/levine32_processed.h5ad
 ```
 
+Example transfer with `runpodctl`:
+
+```bash
+# local machine
+cd /Users/ronguy/Dropbox/Work/CyTOF/Experiments/ProbAE_Deconv
+runpodctl send data/levine32_processed.h5ad
+
+# in pod
+cd /workspace/ProbAE_Deconv/data
+runpodctl receive <TRANSFER_CODE>
+```
+
 ### 3) Run your suite config inside pod
 
 ```bash
@@ -103,6 +115,7 @@ Useful options:
 
 - `--tag myrun`
 - `--downsample-factor 10`
+- `--dataset-path /workspace/ProbAE_Deconv/data/levine32_processed.h5ad`
 - `--output-dir outputs/my_runpod_run`
 - `--gpu-parallel auto` (or `--gpu-parallel 2`)
 - `--gpu-mem-per-job-gb 12` (used by `--gpu-parallel auto`)
