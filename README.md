@@ -183,6 +183,109 @@ bash runpod/run_remote.sh \
   --send
 ```
 
+## Azure workflow
+
+Two supported Azure paths:
+
+1. Fresh Azure GPU VM deployment (recommended for interactive GPU runs)
+2. Azure ML command job (recommended for managed runs)
+3. Azure GPU VM + tmux on an existing VM
+
+### 1) Fresh Azure GPU VM deployment
+
+This path creates a brand new VM instance every run, installs GPU drivers, bootstraps this repo, and prints exactly how to connect and run the suite.
+
+Prerequisites:
+
+```bash
+az login
+```
+
+Deploy a new instance:
+
+```bash
+cd /Users/ronguy/Dropbox/Work/CyTOF/Experiments/ProbAE_Deconv
+bash azure/deploy_vm.sh \
+  --resource-group <RG_NAME> \
+  --location <AZURE_REGION>
+```
+
+Useful options:
+
+- `--size Standard_NC8as_T4_v3`
+- `--name probae-<custom-name>`
+- `--repo-ref main`
+- `--subscription <SUBSCRIPTION_ID>`
+- `--no-bootstrap` (create VM only; skip setup)
+- `--no-gpu-driver` (skip NVIDIA extension install)
+
+Then SSH in and run:
+
+```bash
+ssh azureuser@<PUBLIC_IP>
+cd ~/ProbAE_Deconv
+source .venv/bin/activate
+bash runpod/run_suite.sh --config configs/experiment_suite.yaml --no-send --gpu-parallel auto
+```
+
+### 2) Azure ML command job
+
+Prerequisites:
+
+```bash
+az login
+az extension add -n ml
+```
+
+Submit job:
+
+```bash
+cd /Users/ronguy/Dropbox/Work/CyTOF/Experiments/ProbAE_Deconv
+bash azure/submit_aml_job.sh \
+  --resource-group <RG_NAME> \
+  --workspace <AML_WORKSPACE_NAME> \
+  --compute <AML_COMPUTE_NAME> \
+  --config configs/experiment_suite.yaml
+```
+
+Useful options:
+
+- `--subscription <SUBSCRIPTION_ID>`
+- `--job-name probae-azure-001`
+- `--downsample-factor 10`
+- `--dataset-path <mounted_or_registered_dataset_path>`
+- `--gpu-parallel auto` or `--gpu-parallel 2`
+- `--gpu-mem-per-job-gb 12`
+- `--no-stream`
+
+Fetch outputs:
+
+```bash
+bash azure/fetch_results.sh \
+  --resource-group <RG_NAME> \
+  --workspace <AML_WORKSPACE_NAME> \
+  --job-name <AML_JOB_NAME>
+```
+
+### 3) Azure GPU VM + tmux (existing VM)
+
+Inside VM:
+
+```bash
+cd /workspace
+git clone https://github.com/guyronhuji/ProbAE_Deconv.git ProbAE_Deconv
+cd ProbAE_Deconv
+bash azure/setup_vm.sh
+```
+
+Then run in tmux:
+
+```bash
+cd /workspace/ProbAE_Deconv
+tmux new -s probae_suite
+bash runpod/run_suite.sh --config configs/experiment_suite.yaml --no-send --gpu-parallel auto
+```
+
 ## Main outputs
 
 `outputs/experiment_suite/` contains:
