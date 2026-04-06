@@ -38,7 +38,7 @@ fi
 
 KEYFILE="$(cd "$(dirname "$0")/.." && pwd)/.runpodkey"
 RUNPOD_YAML="${HOME}/.runpod/.runpod.yaml"
-API_KEY="${RUNPOD_API_KEY:-}"
+API_KEY=""
 API_KEY_SOURCE=""
 
 extract_api_key() {
@@ -53,10 +53,16 @@ extract_api_key() {
   echo "$raw"
 }
 
-if [ -z "$API_KEY" ] && [ -f "$KEYFILE" ]; then
+if [ -f "$KEYFILE" ]; then
   API_KEY="$(extract_api_key "$(cat "$KEYFILE")")"
   if [ -n "$API_KEY" ]; then
     API_KEY_SOURCE=".runpodkey"
+  fi
+fi
+if [ -z "$API_KEY" ] && [ -n "${RUNPOD_API_KEY:-}" ]; then
+  API_KEY="$(echo "${RUNPOD_API_KEY}" | tr -d '[:space:]')"
+  if [ -n "$API_KEY" ]; then
+    API_KEY_SOURCE="RUNPOD_API_KEY"
   fi
 fi
 if [ -z "$API_KEY" ] && [ -f "$RUNPOD_YAML" ]; then
@@ -64,9 +70,6 @@ if [ -z "$API_KEY" ] && [ -f "$RUNPOD_YAML" ]; then
   if [ -n "$API_KEY" ]; then
     API_KEY_SOURCE="~/.runpod/.runpod.yaml"
   fi
-fi
-if [ -n "${RUNPOD_API_KEY:-}" ]; then
-  API_KEY_SOURCE="RUNPOD_API_KEY"
 fi
 
 if [ -n "$API_KEY" ]; then
