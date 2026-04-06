@@ -8,6 +8,8 @@ training_progress_level: epoch  # epoch or batch
 training_progress_leave: false
 cpu_multiprocessing_workers: 8
 cpu_parallel_methods: [nmf, classical_archetypes]
+gpu_multiprocessing_workers: 1
+gpu_parallel_methods: [deterministic_archetypal_ae, probabilistic_archetypal_ae, ae, vae]
 
 # Primary dataset (Levine32)
 dataset:

@@ -131,8 +131,15 @@ def run_core_benchmark(
         training_progress_level = "epoch"
     training_progress_leave = bool(suite_cfg.get("training_progress_leave", False))
     cpu_mp_workers = int(suite_cfg.get("cpu_multiprocessing_workers", 1))
+    gpu_mp_workers = int(suite_cfg.get("gpu_multiprocessing_workers", 1))
     cpu_parallel_methods = set(
         suite_cfg.get("cpu_parallel_methods", ["nmf", "classical_archetypes"])
+    )
+    gpu_parallel_methods = set(
+        suite_cfg.get(
+            "gpu_parallel_methods",
+            ["deterministic_archetypal_ae", "probabilistic_archetypal_ae", "ae", "vae"],
+        )
     )
     neural_methods = {"deterministic_archetypal_ae", "probabilistic_archetypal_ae", "ae", "vae"}
     job_specs: list[tuple[str, int, int]] = []
@@ -163,7 +170,8 @@ def run_core_benchmark(
 
     try:
         run_index_map = {(m, d, s): idx for idx, (m, d, s) in enumerate(job_specs, start=1)}
-        pending_mp_jobs: list[dict[str, Any]] = []
+        pending_cpu_mp_jobs: list[dict[str, Any]] = []
+        pending_gpu_mp_jobs: list[dict[str, Any]] = []
         serial_jobs: list[dict[str, Any]] = []
 
         def _consume_completed(payload: dict[str, Any]) -> None:
@@ -256,14 +264,41 @@ def run_core_benchmark(
             run_dir.mkdir(parents=True, exist_ok=True)
             device_label = _display_device_label(method, method_cfg)
 
-            if cpu_mp_workers > 1 and method in cpu_parallel_methods:
+            use_cpu_mp = bool(cpu_mp_workers > 1 and method in cpu_parallel_methods)
+            use_gpu_mp = bool(
+                gpu_mp_workers > 1
+                and method in neural_methods
+                and method in gpu_parallel_methods
+                and _is_accelerator_device(str(method_cfg.get("device", "")))
+            )
+
+            if use_cpu_mp:
                 if show_run_logs:
                     print(
                         f"[core-run {run_idx}/{len(job_specs)}] QUEUED "
-                        f"method={method} dim={dim} seed={seed} device={device_label}",
+                        f"method={method} dim={dim} seed={seed} device={device_label} mode=cpu-mp",
                         flush=True,
                     )
-                pending_mp_jobs.append(
+                pending_cpu_mp_jobs.append(
+                    {
+                        "method": method,
+                        "dim": dim,
+                        "seed": seed,
+                        "run_idx": run_idx,
+                        "run_dir": str(run_dir),
+                        "method_cfg": copy.deepcopy(method_cfg),
+                    }
+                )
+                continue
+
+            if use_gpu_mp:
+                if show_run_logs:
+                    print(
+                        f"[core-run {run_idx}/{len(job_specs)}] QUEUED "
+                        f"method={method} dim={dim} seed={seed} device={device_label} mode=gpu-mp",
+                        flush=True,
+                    )
+                pending_gpu_mp_jobs.append(
                     {
                         "method": method,
                         "dim": dim,
@@ -287,10 +322,10 @@ def run_core_benchmark(
                 }
             )
 
-        if pending_mp_jobs:
+        if pending_cpu_mp_jobs:
             if show_run_logs:
                 print(
-                    f"[core-stage] running {len(pending_mp_jobs)} CPU jobs with multiprocessing "
+                    f"[core-stage] running {len(pending_cpu_mp_jobs)} CPU jobs with multiprocessing "
                     f"(workers={cpu_mp_workers})",
                     flush=True,
                 )
@@ -310,7 +345,33 @@ def run_core_benchmark(
                 initializer=_init_core_job_worker,
                 initargs=(shared_payload,),
             ) as pool:
-                for payload in pool.imap_unordered(_execute_core_job, pending_mp_jobs):
+                for payload in pool.imap_unordered(_execute_core_job, pending_cpu_mp_jobs):
+                    _consume_completed(payload)
+
+        if pending_gpu_mp_jobs:
+            if show_run_logs:
+                print(
+                    f"[core-stage] running {len(pending_gpu_mp_jobs)} accelerator jobs with multiprocessing "
+                    f"(workers={gpu_mp_workers})",
+                    flush=True,
+                )
+            ctx = mp.get_context("spawn")
+            shared_payload = {
+                "x_train": prepared.train_x,
+                "x_val": prepared.val_x,
+                "x_test": prepared.test_x,
+                "labels_val": prepared.dataset.val.labels,
+                "labels_test": prepared.dataset.test.labels,
+                "cell_ids_val": prepared.dataset.val.cell_ids,
+                "cell_ids_test": prepared.dataset.test.cell_ids,
+                "marker_names": prepared.dataset.markers,
+            }
+            with ctx.Pool(
+                processes=gpu_mp_workers,
+                initializer=_init_core_job_worker,
+                initargs=(shared_payload,),
+            ) as pool:
+                for payload in pool.imap_unordered(_execute_core_job, pending_gpu_mp_jobs):
                     _consume_completed(payload)
 
         if serial_jobs and show_run_logs:
@@ -419,6 +480,11 @@ def _display_device_label(method: str, method_cfg: dict[str, Any]) -> str:
     if method in {"nmf", "classical_archetypes"}:
         return "cpu(sklearn)"
     return str(method_cfg.get("device", "cpu"))
+
+
+def _is_accelerator_device(device_label: str) -> bool:
+    label = str(device_label).strip().lower()
+    return label.startswith("cuda") or label.startswith("mps")
 
 
 def _init_core_job_worker(shared_payload: dict[str, Any]) -> None:

@@ -31,12 +31,25 @@ if [ -n "${REPO_REF}" ]; then
 fi
 
 echo ""
-echo "=== [2/4] Install package + dependencies ==="
+echo "=== [2/5] Install system tools ==="
+if command -v apt-get >/dev/null 2>&1; then
+  if ! command -v tmux >/dev/null 2>&1; then
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y tmux
+  else
+    echo "tmux already installed"
+  fi
+else
+  echo "apt-get not found; skipping tmux installation"
+fi
+
+echo ""
+echo "=== [3/5] Install package + dependencies ==="
 python3 -m pip install --upgrade pip
 python3 -m pip install -e ".[extras]"
 
 echo ""
-echo "=== [3/4] Verify runtime ==="
+echo "=== [4/5] Verify runtime ==="
 python3 - <<'PY'
 import torch
 print("PyTorch:", torch.__version__)
@@ -47,7 +60,7 @@ if torch.cuda.is_available():
 PY
 
 echo ""
-echo "=== [4/4] Done ==="
+echo "=== [5/5] Done ==="
 echo "Next:"
 echo "  cd ${REPO_DIR}"
 echo "  bash runpod/run_suite.sh --config configs/experiment_suite.yaml --send"

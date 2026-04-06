@@ -40,6 +40,8 @@ SUITE_DEFAULTS: dict[str, Any] = {
     "training_progress_leave": False,
     "cpu_multiprocessing_workers": 1,
     "cpu_parallel_methods": ["nmf", "classical_archetypes"],
+    "gpu_multiprocessing_workers": 1,
+    "gpu_parallel_methods": ["deterministic_archetypal_ae", "probabilistic_archetypal_ae", "ae", "vae"],
     "device": "auto",
     "dataset": {
         "name": "levine32",
@@ -235,6 +237,11 @@ def run_experiment_suite(config: dict[str, Any]) -> Path:
             "training_progress_leave": bool(resolved_cfg.get("training_progress_leave", False)),
             "cpu_multiprocessing_workers": int(resolved_cfg.get("cpu_multiprocessing_workers", 1)),
             "cpu_parallel_methods": resolved_cfg.get("cpu_parallel_methods", ["nmf", "classical_archetypes"]),
+            "gpu_multiprocessing_workers": int(resolved_cfg.get("gpu_multiprocessing_workers", 1)),
+            "gpu_parallel_methods": resolved_cfg.get(
+                "gpu_parallel_methods",
+                ["deterministic_archetypal_ae", "probabilistic_archetypal_ae", "ae", "vae"],
+            ),
         }
         runs, summary_df = run_core_benchmark(prepared=prepared, suite_cfg=core_cfg, output_root=out)
         _phase_done("core methods done")

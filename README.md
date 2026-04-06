@@ -104,9 +104,38 @@ Useful options:
 - `--tag myrun`
 - `--downsample-factor 10`
 - `--output-dir outputs/my_runpod_run`
+- `--gpu-parallel auto` (or `--gpu-parallel 2`)
+- `--gpu-mem-per-job-gb 12` (used by `--gpu-parallel auto`)
 - `--no-send` (skip transfer)
 
-`run_suite.sh` writes a temporary RunPod config and forces NN methods to `cuda`.
+`run_suite.sh` writes a temporary RunPod config, forces NN methods to `cuda`, and can run NN jobs in parallel on GPU when VRAM allows.
+
+### 3b) Recommended: run with tmux (survives disconnect/logout)
+
+Inside the pod:
+
+```bash
+cd /workspace/ProbAE_Deconv
+tmux new -s probae_suite
+bash runpod/run_suite.sh --config configs/experiment_suite.yaml --send --gpu-parallel auto
+```
+
+Detach while leaving run active:
+
+- `Ctrl-b` then `d`
+
+Reattach later:
+
+```bash
+tmux ls
+tmux attach -t probae_suite
+```
+
+Run in background without attaching:
+
+```bash
+tmux new -d -s probae_suite "cd /workspace/ProbAE_Deconv && bash runpod/run_suite.sh --config configs/experiment_suite.yaml --send --gpu-parallel auto"
+```
 
 ### 4) Fetch results locally
 

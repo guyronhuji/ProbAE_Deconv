@@ -25,6 +25,8 @@ SEND_RESULTS=0
 DOWNSAMPLE_FACTOR=""
 OUTPUT_DIR=""
 NOTEBOOK_DIR=""
+GPU_PARALLEL="auto"
+GPU_MEM_PER_JOB_GB="12"
 
 usage() {
   cat <<'EOF'
@@ -37,6 +39,8 @@ Options:
   --output-dir <path>        Override output_dir in config
   --notebook-dir <path>      Override notebook_output_dir in config
   --downsample-factor <int>  Optional quick-test downsampling (e.g. 5, 10, 20)
+  --gpu-parallel <auto|N>    GPU multiprocessing workers (default: auto)
+  --gpu-mem-per-job-gb <N>   VRAM budget per parallel GPU job for auto mode (default: 12)
   --send                     Create tar.gz and run `runpodctl send` at end
   --no-send                  Do not send results (default)
   -h, --help                 Show this help
@@ -50,6 +54,8 @@ while [[ $# -gt 0 ]]; do
     --output-dir) OUTPUT_DIR="$2"; shift 2 ;;
     --notebook-dir) NOTEBOOK_DIR="$2"; shift 2 ;;
     --downsample-factor) DOWNSAMPLE_FACTOR="$2"; shift 2 ;;
+    --gpu-parallel) GPU_PARALLEL="$2"; shift 2 ;;
+    --gpu-mem-per-job-gb) GPU_MEM_PER_JOB_GB="$2"; shift 2 ;;
     --send) SEND_RESULTS=1; shift ;;
     --no-send) SEND_RESULTS=0; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -76,6 +82,42 @@ if [ -z "${NOTEBOOK_DIR}" ]; then
   NOTEBOOK_DIR="notebooks/experiment_suite_${TAG}"
 fi
 
+resolve_gpu_workers() {
+  local mode="$1"
+  local mem_per_job="$2"
+  local workers=1
+  if [[ "$mode" =~ ^[0-9]+$ ]]; then
+    workers="$mode"
+  elif [ "$mode" = "auto" ]; then
+    if command -v nvidia-smi >/dev/null 2>&1; then
+      local free_mb
+      free_mb="$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -d '[:space:]' || true)"
+      if [[ "${free_mb}" =~ ^[0-9]+$ ]] && [[ "${mem_per_job}" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+        workers="$(
+          python3 - <<PY
+import math
+free_mb = float("${free_mb}")
+mem_per_job_gb = float("${mem_per_job}")
+need_mb = max(1.0, mem_per_job_gb * 1024.0)
+w = int(max(1, math.floor(free_mb / need_mb)))
+print(min(w, 8))
+PY
+)"
+      fi
+    fi
+  else
+    echo "ERROR: --gpu-parallel must be 'auto' or a positive integer"
+    exit 1
+  fi
+
+  if ! [[ "$workers" =~ ^[0-9]+$ ]] || [ "$workers" -lt 1 ]; then
+    workers=1
+  fi
+  echo "$workers"
+}
+
+GPU_WORKERS="$(resolve_gpu_workers "${GPU_PARALLEL}" "${GPU_MEM_PER_JOB_GB}")"
+
 TMP_CFG="/tmp/probae_runpod_${TAG}.yaml"
 LOG_DIR="${OUTPUT_DIR}/reports"
 mkdir -p "${LOG_DIR}"
@@ -94,6 +136,11 @@ cfg["show_progress"] = True
 cfg["show_run_logs"] = True
 cfg["show_training_progress"] = True
 cfg["training_progress_level"] = cfg.get("training_progress_level", "epoch")
+cfg["gpu_multiprocessing_workers"] = int("${GPU_WORKERS}")
+cfg["gpu_parallel_methods"] = ["deterministic_archetypal_ae", "probabilistic_archetypal_ae", "ae", "vae"]
+if int("${GPU_WORKERS}") > 1:
+    # Multiple concurrent NN jobs make nested progress bars unreadable.
+    cfg["show_training_progress"] = False
 
 methods = cfg.setdefault("methods", {})
 for name in ("deterministic_archetypal_ae", "probabilistic_archetypal_ae", "ae", "vae"):
@@ -112,6 +159,8 @@ print("Wrote:", "${TMP_CFG}")
 print("output_dir:", cfg["output_dir"])
 print("notebook_output_dir:", cfg["notebook_output_dir"])
 print("downsample_factor:", cfg.get("dataset", {}).get("downsample_factor"))
+print("gpu_multiprocessing_workers:", cfg.get("gpu_multiprocessing_workers"))
+print("show_training_progress:", cfg.get("show_training_progress"))
 PY
 
 echo ""
@@ -142,4 +191,3 @@ if [ "${SEND_RESULTS}" -eq 1 ]; then
   echo "Paste the printed code into local runpod/fetch_results.sh"
   runpodctl send "${TAR_PATH}"
 fi
-

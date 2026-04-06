@@ -37,17 +37,40 @@ if ! command -v runpodctl >/dev/null 2>&1; then
 fi
 
 KEYFILE="$(cd "$(dirname "$0")/.." && pwd)/.runpodkey"
-API_KEY=""
-if [ -f "$KEYFILE" ]; then
-  RAW_KEY="$(tr -d '[:space:]' < "$KEYFILE")"
-  if [[ "$RAW_KEY" == apiKey* ]]; then
-    API_KEY="${RAW_KEY#apiKey}"
-  else
-    API_KEY="$RAW_KEY"
+RUNPOD_YAML="${HOME}/.runpod/.runpod.yaml"
+API_KEY="${RUNPOD_API_KEY:-}"
+API_KEY_SOURCE=""
+
+extract_api_key() {
+  local raw="$1"
+  raw="$(echo "$raw" | tr -d '\r' | head -n1)"
+  raw="${raw#apiKey}"
+  raw="${raw#api_key}"
+  raw="${raw#:}"
+  raw="${raw#=}"
+  raw="${raw# }"
+  raw="${raw% }"
+  echo "$raw"
+}
+
+if [ -z "$API_KEY" ] && [ -f "$KEYFILE" ]; then
+  API_KEY="$(extract_api_key "$(cat "$KEYFILE")")"
+  if [ -n "$API_KEY" ]; then
+    API_KEY_SOURCE=".runpodkey"
   fi
+fi
+if [ -z "$API_KEY" ] && [ -f "$RUNPOD_YAML" ]; then
+  API_KEY="$(awk -F': *' '/^apiKey:/ {print $2; exit}' "$RUNPOD_YAML" | tr -d '[:space:]')"
+  if [ -n "$API_KEY" ]; then
+    API_KEY_SOURCE="~/.runpod/.runpod.yaml"
+  fi
+fi
+if [ -n "${RUNPOD_API_KEY:-}" ]; then
+  API_KEY_SOURCE="RUNPOD_API_KEY"
 fi
 
 if [ -n "$API_KEY" ]; then
+  echo "Using API key from ${API_KEY_SOURCE:-unknown source} for pricing query."
   mkdir -p "${HOME}/.runpod"
   printf "apiKey: %s\napiUrl: https://api.runpod.io/graphql\n" "$API_KEY" > "${HOME}/.runpod/.runpod.yaml"
 fi
@@ -65,6 +88,8 @@ if [ -n "$API_KEY" ]; then
   PRICE_JSON="$(curl -sf -X POST "https://api.runpod.io/graphql?api_key=${API_KEY}" \
     -H "Content-Type: application/json" \
     -d "$QUERY" || echo '{}')"
+else
+  echo "WARN: No API key found for GraphQL pricing; showing availability without price."
 fi
 
 echo "Probing availability counts ..."
@@ -89,6 +114,14 @@ for g in price_raw.get("data", {}).get("gpuTypes", []):
     lp = g.get("lowestPrice") or {}
     spot = lp.get("minimumBidPrice")
     od = lp.get("uninterruptablePrice")
+    try:
+        spot = float(spot) if spot is not None else None
+    except Exception:
+        spot = None
+    try:
+        od = float(od) if od is not None else None
+    except Exception:
+        od = None
     prices[g["id"]] = {
         "spot": f"${spot:.2f}" if isinstance(spot, (float, int)) else "-",
         "od": f"${od:.2f}" if isinstance(od, (float, int)) else "-",
@@ -241,4 +274,3 @@ OUTPUT="$(runpodctl pod create \
     echo "$OUTPUT"
     exit 1
   }
-
