@@ -43,14 +43,34 @@ API_KEY_SOURCE=""
 
 extract_api_key() {
   local raw="$1"
-  raw="$(echo "$raw" | tr -d '\r' | head -n1)"
-  raw="${raw#apiKey}"
-  raw="${raw#api_key}"
-  raw="${raw#:}"
-  raw="${raw#=}"
-  raw="${raw# }"
-  raw="${raw% }"
-  echo "$raw"
+  raw="$(echo "$raw" | tr -d '\r' | head -n1 | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  python3 - <<PY
+import re
+s = """${raw}""".strip()
+if not s:
+    print("")
+    raise SystemExit(0)
+
+# If there is an explicit key-like token (rpa_..., rp_..., api key token), use it.
+tokens = re.split(r"[\\s:=]+", s)
+for t in tokens:
+    if re.match(r"^(rpa_|rp_)[A-Za-z0-9._-]+$", t):
+        print(t)
+        raise SystemExit(0)
+
+# Fallbacks for common "apiKey <KEY>" / "apiKey:<KEY>" lines.
+s2 = re.sub(r"^(apiKey|api_key)\\s*[:=]?\\s*", "", s, flags=re.I).strip()
+if s2 and s2 != s:
+    print(s2.split()[0])
+    raise SystemExit(0)
+
+# If it's a single token, treat it as key candidate.
+parts = s.split()
+if len(parts) == 1:
+    print(parts[0])
+else:
+    print("")
+PY
 }
 
 if [ -f "$KEYFILE" ]; then
@@ -75,7 +95,9 @@ fi
 if [ -n "$API_KEY" ]; then
   echo "Using API key from ${API_KEY_SOURCE:-unknown source} for pricing query."
   mkdir -p "${HOME}/.runpod"
-  printf "apiKey: %s\napiUrl: https://api.runpod.io/graphql\n" "$API_KEY" > "${HOME}/.runpod/.runpod.yaml"
+  if ! printf "apiKey: %s\napiUrl: https://api.runpod.io/graphql\n" "$API_KEY" > "${HOME}/.runpod/.runpod.yaml" 2>/dev/null; then
+    echo "WARN: could not write ${HOME}/.runpod/.runpod.yaml (continuing with in-script key)."
+  fi
 fi
 
 echo "Querying RunPod available GPU types ..."
@@ -91,6 +113,26 @@ if [ -n "$API_KEY" ]; then
   PRICE_JSON="$(curl -sf -X POST "https://api.runpod.io/graphql?api_key=${API_KEY}" \
     -H "Content-Type: application/json" \
     -d "$QUERY" || echo '{}')"
+  PRICE_ERR="$(
+    python3 - <<PY
+import json
+raw = """${PRICE_JSON}"""
+try:
+    d = json.loads(raw)
+except Exception:
+    print("invalid_json")
+    raise SystemExit(0)
+errs = d.get("errors") or []
+if errs:
+    msg = errs[0].get("message", "GraphQL error")
+    print(msg)
+PY
+  )"
+  if [ -n "${PRICE_ERR}" ]; then
+    echo "WARN: price query failed (${PRICE_ERR})."
+    echo "      check .runpodkey key value and runpod account scope."
+    PRICE_JSON="{}"
+  fi
 else
   echo "WARN: No API key found for GraphQL pricing; showing availability without price."
 fi
