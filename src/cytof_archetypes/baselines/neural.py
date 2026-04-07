@@ -440,11 +440,14 @@ class _TensorBatchLoader:
 
     def __iter__(self):
         if self.shuffle:
-            idx = torch.randperm(self._n, device=self.tensor.device)
+            # Pre-shuffle once with a single gather, then yield contiguous slices.
+            # Avoids 1500+ per-batch random gathers (poor GPU cache locality).
+            perm = torch.randperm(self._n, device=self.tensor.device)
+            data = self.tensor[perm]
         else:
-            idx = torch.arange(self._n, device=self.tensor.device)
+            data = self.tensor
         for start in range(0, self._n, self.batch_size):
-            yield (self.tensor[idx[start : start + self.batch_size]],)
+            yield (data[start : start + self.batch_size],)
 
 
 def _to_loader(
@@ -567,7 +570,7 @@ def _run_training_loop(
     try:
         for epoch in epoch_iter:
             model.train()
-            train_loss_acc = None
+            train_loss_acc = torch.zeros((), device=next(model.parameters()).device)
             train_batch_count = 0
             batch_iter: Any = train_loader
             batch_bar: Any | None = None
@@ -589,8 +592,8 @@ def _run_training_loop(
                     if train_cfg.grad_clip > 0:
                         torch.nn.utils.clip_grad_norm_(model.parameters(), train_cfg.grad_clip)
                     optimizer.step()
-                    loss_d = loss.detach()
-                    train_loss_acc = loss_d if train_loss_acc is None else train_loss_acc + loss_d
+                    with torch.no_grad():
+                        train_loss_acc.add_(loss)
                     train_batch_count += 1
                     if batch_bar is not None:
                         batch_bar.set_postfix({"loss": f"{float(loss_d.item()):.4f}"})
@@ -600,11 +603,10 @@ def _run_training_loop(
 
             model.eval()
             with torch.no_grad():
-                val_loss_acc = None
+                val_loss_acc = torch.zeros((), device=next(model.parameters()).device)
                 val_batch_count = 0
                 for (batch_x,) in val_loader:
-                    vl = loss_eval(batch_x)[0].detach()
-                    val_loss_acc = vl if val_loss_acc is None else val_loss_acc + vl
+                    val_loss_acc.add_(loss_eval(batch_x)[0])
                     val_batch_count += 1
 
             # One CUDA sync per epoch instead of ~1800 syncs
