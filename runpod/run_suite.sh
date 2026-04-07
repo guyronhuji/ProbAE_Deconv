@@ -151,17 +151,25 @@ cfg["show_run_logs"] = True
 cfg["show_training_progress"] = True
 cfg["training_progress_level"] = cfg.get("training_progress_level", "epoch")
 cfg["gpu_multiprocessing_workers"] = int("${GPU_WORKERS}")
-cfg["gpu_parallel_methods"] = ["deterministic_archetypal_ae", "probabilistic_archetypal_ae", "ae", "vae"]
 if int("${GPU_WORKERS}") > 1:
     # Multiple concurrent NN jobs make nested progress bars unreadable.
     cfg["show_training_progress"] = False
 
+# Only set device=cuda for methods that are actually in method_order.
+# Never add methods or override method_order — the config controls what runs.
+_default_method_order = ["nmf", "classical_archetypes", "deterministic_archetypal_ae",
+                         "probabilistic_archetypal_ae", "ae", "vae"]
+_neural_methods = {"deterministic_archetypal_ae", "probabilistic_archetypal_ae", "ae", "vae"}
+method_order = cfg.get("method_order", _default_method_order)
 methods = cfg.setdefault("methods", {})
-for name in ("deterministic_archetypal_ae", "probabilistic_archetypal_ae", "ae", "vae"):
-    m = methods.setdefault(name, {})
-    m["device"] = "cuda"
-    methods[name] = m
+for name in method_order:
+    if name in _neural_methods:
+        m = methods.setdefault(name, {})
+        m["device"] = "cuda"
+        methods[name] = m
 cfg["methods"] = methods
+# Sync gpu_parallel_methods to the NN methods that are actually being run.
+cfg["gpu_parallel_methods"] = [m for m in method_order if m in _neural_methods]
 
 ds = cfg.setdefault("dataset", {})
 raw_ds = "${DOWNSAMPLE_FACTOR}".strip()
@@ -177,6 +185,7 @@ print("output_dir:", cfg["output_dir"])
 print("notebook_output_dir:", cfg["notebook_output_dir"])
 print("dataset_input_path:", cfg.get("dataset", {}).get("input_path"))
 print("downsample_factor:", cfg.get("dataset", {}).get("downsample_factor"))
+print("method_order:", cfg.get("method_order"))
 print("gpu_multiprocessing_workers:", cfg.get("gpu_multiprocessing_workers"))
 print("show_training_progress:", cfg.get("show_training_progress"))
 PY
