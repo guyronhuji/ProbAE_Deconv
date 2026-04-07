@@ -46,6 +46,18 @@ fi
 echo ""
 echo "=== [3/5] Install package + dependencies ==="
 python3 -m pip install --upgrade pip
+
+# Install PyTorch with CUDA support before the package installs its deps.
+# RunPod pods ship with CUDA 12.x; cu121 wheels work on 12.1+ (incl 12.4/12.6).
+# If torch is already installed with CUDA (e.g. using a PyTorch pod template),
+# this is a no-op because the version constraint is already satisfied.
+if python3 -c "import torch; assert torch.cuda.is_available()" 2>/dev/null; then
+  echo "PyTorch with CUDA already present — skipping torch reinstall."
+else
+  echo "Installing PyTorch with CUDA 12.1 wheels ..."
+  python3 -m pip install torch --index-url https://download.pytorch.org/whl/cu121
+fi
+
 python3 -m pip install -e ".[extras]"
 python3 -m pip install PyCytoData
 
