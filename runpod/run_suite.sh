@@ -30,6 +30,7 @@ GPU_MEM_PER_JOB_GB="12"
 DATASET_PATH_OVERRIDE=""
 AUTO_PREPARE_DATASET=1
 DATASET_FORCE_DOWNLOAD=0
+BREAST_DATA_DIR=""
 
 usage() {
   cat <<'EOF'
@@ -43,9 +44,10 @@ Options:
   --notebook-dir <path>      Override notebook_output_dir in config
   --downsample-factor <int>  Optional quick-test downsampling (e.g. 5, 10, 20)
   --dataset-path <path>      Override dataset.input_path in suite config
-  --auto-prepare-dataset     Auto-download/prepare Levine32 if dataset file is missing (default)
+  --auto-prepare-dataset     Auto-prepare dataset if missing (Levine32: download; breast: run prep script)
   --no-auto-prepare-dataset  Disable automatic dataset preparation
-  --dataset-force-download   Force dataset redownload when auto-preparing
+  --dataset-force-download   Force dataset redownload when auto-preparing (Levine32 only)
+  --breast-data-dir <path>   Path to breast parquet files (enables auto-prepare for custom_cytof)
   --gpu-parallel <auto|N>    GPU multiprocessing workers (default: auto)
   --gpu-mem-per-job-gb <N>   VRAM budget per parallel GPU job for auto mode (default: 12)
   --send                     Create tar.gz and run `runpodctl send` at end
@@ -65,6 +67,7 @@ while [[ $# -gt 0 ]]; do
     --auto-prepare-dataset) AUTO_PREPARE_DATASET=1; shift ;;
     --no-auto-prepare-dataset) AUTO_PREPARE_DATASET=0; shift ;;
     --dataset-force-download) DATASET_FORCE_DOWNLOAD=1; shift ;;
+    --breast-data-dir) BREAST_DATA_DIR="$2"; shift 2 ;;
     --gpu-parallel) GPU_PARALLEL="$2"; shift 2 ;;
     --gpu-mem-per-job-gb) GPU_MEM_PER_JOB_GB="$2"; shift 2 ;;
     --send) SEND_RESULTS=1; shift ;;
@@ -202,14 +205,22 @@ print(str(cfg.get("dataset", {}).get("name", "")).strip().lower())
 PY
 )"
 
-if [ "${AUTO_PREPARE_DATASET}" -eq 1 ] && [ "${DATASET_NAME}" = "levine32" ] && [ -n "${DATASET_ABS_PATH}" ] && [ ! -f "${DATASET_ABS_PATH}" ]; then
-  echo ""
-  echo "Dataset not found; auto-preparing Levine32 ..."
-  PREP_CMD=(bash runpod/prepare_dataset.sh --output "${DATASET_ABS_PATH}" --log-path "${REPO_ROOT}/data/levine32_preprocessing_log.json")
-  if [ "${DATASET_FORCE_DOWNLOAD}" -eq 1 ]; then
-    PREP_CMD+=(--force-download --overwrite)
+if [ "${AUTO_PREPARE_DATASET}" -eq 1 ] && [ -n "${DATASET_ABS_PATH}" ] && [ ! -f "${DATASET_ABS_PATH}" ]; then
+  if [ "${DATASET_NAME}" = "levine32" ]; then
+    echo ""
+    echo "Dataset not found; auto-preparing Levine32 ..."
+    PREP_CMD=(bash runpod/prepare_dataset.sh --output "${DATASET_ABS_PATH}" --log-path "${REPO_ROOT}/data/levine32_preprocessing_log.json")
+    if [ "${DATASET_FORCE_DOWNLOAD}" -eq 1 ]; then
+      PREP_CMD+=(--force-download --overwrite)
+    fi
+    "${PREP_CMD[@]}"
+  elif [ "${DATASET_NAME}" = "custom_cytof" ] && [ -n "${BREAST_DATA_DIR}" ]; then
+    echo ""
+    echo "Dataset not found; auto-preparing breast CyTOF from parquet files ..."
+    bash runpod/prepare_breast_dataset.sh \
+      --input-dir "${BREAST_DATA_DIR}" \
+      --output "${DATASET_ABS_PATH}"
   fi
-  "${PREP_CMD[@]}"
 fi
 
 if [ -z "${DATASET_ABS_PATH}" ] || [ ! -f "${DATASET_ABS_PATH}" ]; then
@@ -217,20 +228,28 @@ if [ -z "${DATASET_ABS_PATH}" ] || [ ! -f "${DATASET_ABS_PATH}" ]; then
   echo "ERROR: Dataset file not found:"
   echo "  ${DATASET_ABS_PATH:-<empty path in config>}"
   echo ""
-  echo "Fix in one of these ways:"
-  echo "1) Put dataset in default location inside pod:"
-  echo "   /workspace/ProbAE_Deconv/data/levine32_processed.h5ad"
-  echo ""
-  echo "2) Run with explicit dataset path:"
-  echo "   bash runpod/run_suite.sh --config ${CONFIG_PATH} --dataset-path /path/to/levine32_processed.h5ad --send"
-  echo ""
-  echo "Transfer example using runpodctl:"
-  echo "  On your local machine:"
-  echo "    cd /Users/ronguy/Dropbox/Work/CyTOF/Experiments/ProbAE_Deconv"
-  echo "    runpodctl send data/levine32_processed.h5ad"
-  echo "  In the pod:"
-  echo "    cd /workspace/ProbAE_Deconv/data"
-  echo "    runpodctl receive <TRANSFER_CODE>"
+  if [ "${DATASET_NAME}" = "levine32" ]; then
+    echo "Fix in one of these ways:"
+    echo "1) Let the script auto-download:"
+    echo "   bash runpod/run_suite.sh --config ${CONFIG_PATH} --auto-prepare-dataset"
+    echo ""
+    echo "2) Transfer pre-processed file from local machine:"
+    echo "   Local:  runpodctl send data/levine32_processed.h5ad"
+    echo "   Pod:    cd /workspace/ProbAE_Deconv/data && runpodctl receive <CODE>"
+  elif [ "${DATASET_NAME}" = "custom_cytof" ]; then
+    echo "Fix in one of these ways:"
+    echo "1) Transfer pre-processed h5ad from local machine:"
+    echo "   Local:  runpodctl send data/breast_cytof_processed.h5ad"
+    echo "   Pod:    cd /workspace/ProbAE_Deconv/data && runpodctl receive <CODE>"
+    echo ""
+    echo "2) Transfer raw parquet files and auto-prepare:"
+    echo "   bash runpod/run_suite.sh --config ${CONFIG_PATH} \\"
+    echo "     --breast-data-dir /path/to/parquet/files --send"
+  else
+    echo "Transfer the dataset file to the pod and re-run with:"
+    echo "   bash runpod/run_suite.sh --config ${CONFIG_PATH} \\"
+    echo "     --dataset-path /path/to/dataset.h5ad --send"
+  fi
   exit 1
 fi
 

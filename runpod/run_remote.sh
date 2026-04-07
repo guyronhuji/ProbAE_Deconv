@@ -25,6 +25,8 @@ SEND_FLAG="--no-send"
 DOWNSAMPLE_FACTOR=""
 OUTPUT_DIR=""
 NOTEBOOK_DIR=""
+DATASET_PATH_OVERRIDE=""
+BREAST_DATA_DIR=""
 
 usage() {
   cat <<'EOF'
@@ -40,6 +42,8 @@ Options:
   --downsample-factor <int>  Optional quick-test downsample
   --output-dir <path>        Remote output_dir override
   --notebook-dir <path>      Remote notebook_output_dir override
+  --dataset-path <path>      Override dataset.input_path (remote path)
+  --breast-data-dir <path>   Remote path to breast parquet files (triggers auto-prepare)
   --send                     Send tar via runpodctl at end
   --no-send                  Do not send tar (default)
   -h, --help                 Show help
@@ -56,6 +60,8 @@ while [[ $# -gt 0 ]]; do
     --downsample-factor) DOWNSAMPLE_FACTOR="$2"; shift 2 ;;
     --output-dir) OUTPUT_DIR="$2"; shift 2 ;;
     --notebook-dir) NOTEBOOK_DIR="$2"; shift 2 ;;
+    --dataset-path) DATASET_PATH_OVERRIDE="$2"; shift 2 ;;
+    --breast-data-dir) BREAST_DATA_DIR="$2"; shift 2 ;;
     --send) SEND_FLAG="--send"; shift ;;
     --no-send) SEND_FLAG="--no-send"; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -90,6 +96,12 @@ if [ -n "${OUTPUT_DIR}" ]; then
 fi
 if [ -n "${NOTEBOOK_DIR}" ]; then
   REMOTE_CMD+=("--notebook-dir" "${NOTEBOOK_DIR}")
+fi
+if [ -n "${DATASET_PATH_OVERRIDE}" ]; then
+  REMOTE_CMD+=("--dataset-path" "${DATASET_PATH_OVERRIDE}")
+fi
+if [ -n "${BREAST_DATA_DIR}" ]; then
+  REMOTE_CMD+=("--breast-data-dir" "${BREAST_DATA_DIR}")
 fi
 
 printf -v REMOTE_JOINED ' %q' "${REMOTE_CMD[@]}"

@@ -1,0 +1,73 @@
+seed: 42
+output_dir: outputs/pae_k10_full
+show_progress: true
+show_run_logs: true
+show_training_progress: true
+training_progress_level: epoch
+training_progress_leave: false
+cpu_multiprocessing_workers: 1
+cpu_parallel_methods: []
+gpu_multiprocessing_workers: 1
+gpu_parallel_methods: [probabilistic_archetypal_ae]
+
+dataset:
+  name: levine32
+  input_path: data/levine32_processed.h5ad
+  marker_columns: null
+  label_column: label
+  cell_id_column: cell_id
+  val_fraction: 0.15
+  test_fraction: 0.15
+#  downsample_factor: 10
+  # no downsample_factor — uses all 265k cells
+
+preprocessing:
+  transform: none
+  arcsinh_cofactor: 5.0
+  normalization: zscore
+  clip_min: null
+  clip_max: null
+
+# Run enough seeds to handle k=10 instability (high seed variance in sweep)
+seeds: [13]
+
+method_order:
+  - probabilistic_archetypal_ae
+
+sweeps:
+  k_values: [12]
+  latent_dims: [12]
+
+methods:
+  probabilistic_archetypal_ae:
+    device: auto
+    hidden_dims: [128, 64]
+    dropout: 0.1
+    batch_size: 512       # larger batch for full dataset (265k cells)
+    lr: 3.0e-4
+    weight_decay: 1.0e-4
+    max_epochs: 1000       # extra headroom — full dataset trains slower
+    patience: 15
+    grad_clip: 1.0
+    entropy_reg_weight: 1.0e-3
+    diversity_reg_weight: 5.0e-3   # keeps archetypes spread apart
+    variance_reg_weight: 1.0e-4    # penalty is now exp(logvar) not logvar^2, so 1e-4 is sufficient to prevent escape
+
+marker_groups: {}
+
+secondary_dataset:
+  enabled: false
+  dataset:
+    name: secondary
+    input_path: data/secondary_dataset_placeholder.csv
+    marker_columns: null
+    label_column: label
+    cell_id_column: cell_id
+    val_fraction: 0.15
+    test_fraction: 0.15
+  method_order: [probabilistic_archetypal_ae]
+  seeds: [13]
+  k_values: [10]
+
+auxiliary_models:
+  enabled: false

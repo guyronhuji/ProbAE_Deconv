@@ -1,0 +1,63 @@
+seed: 42
+output_dir: outputs/breast_pae_k_sweep
+show_progress: true
+show_run_logs: true
+show_training_progress: true
+training_progress_level: epoch
+training_progress_leave: false
+cpu_multiprocessing_workers: 1
+cpu_parallel_methods: []
+gpu_multiprocessing_workers: 1
+gpu_parallel_methods: [probabilistic_archetypal_ae]
+
+dataset:
+  name: custom_cytof
+  input_path: data/breast_cytof_processed.h5ad
+  marker_columns: null       # auto-detect: all numeric columns except cell_id/sample_id
+  label_column: null         # unlabeled dataset
+  cell_id_column: cell_id
+  val_fraction: 0.15
+  test_fraction: 0.15
+  # ~1.1M cells total — downsample to keep training fast on each K
+  # Remove or set higher once you've confirmed a good K range
+  #downsample_factor: 20      # ~113k cells — fast smoke sweep to determine best K
+
+preprocessing:
+  transform: none
+  arcsinh_cofactor: 5.0
+  normalization: zscore
+  clip_min: null
+  clip_max: null
+
+# Two seeds per K — enough for cross-seed stability estimate
+seeds: [42]
+
+method_order:
+  - probabilistic_archetypal_ae
+
+sweeps:
+  k_values:  [8]
+  latent_dims: [8]   # latent_dim = k for archetypal AE
+
+methods:
+  probabilistic_archetypal_ae:
+    device: auto
+    hidden_dims: [128, 64]
+    dropout: 0.1
+    batch_size: 512
+    lr: 3.0e-4
+    weight_decay: 1.0e-4
+    max_epochs: 1000
+    patience: 15
+    grad_clip: 1.0
+    entropy_reg_weight: 1.0e-3
+    diversity_reg_weight: 5.0e-3
+    variance_reg_weight: 1.0e-4   # exp(logvar) penalty prevents archetype collapse
+
+marker_groups: {}
+
+secondary_dataset:
+  enabled: false
+
+auxiliary_models:
+  enabled: false

@@ -130,7 +130,8 @@ def load_levine32_bundle(
     if cell_id_column not in frame.columns:
         frame[cell_id_column] = [f"cell_{idx}" for idx in range(len(frame))]
 
-    markers = _detect_markers(frame, marker_columns, label_column, cell_id_column)
+    effective_label_col = label_column or ("label" if path.suffix.lower() == ".h5ad" else None)
+    markers = _detect_markers(frame, marker_columns, effective_label_col, cell_id_column)
     if len(markers) == 0:
         raise ValueError("No marker columns available after validation.")
 
