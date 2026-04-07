@@ -158,6 +158,8 @@ def run_core_benchmark(
     cpu_methods = set(cpu_parallel_methods)
     cpu_job_total = sum(1 for method, _, _ in job_specs if method in cpu_methods)
     accel_job_total = len(job_specs) - cpu_job_total
+    cpu_completed = 0
+    accel_completed = 0
     cpu_progress = None
     accel_progress = None
     if show_progress and tqdm is not None and len(job_specs) > 0:
@@ -175,6 +177,7 @@ def run_core_benchmark(
         serial_jobs: list[dict[str, Any]] = []
 
         def _consume_completed(payload: dict[str, Any]) -> None:
+            nonlocal cpu_completed, accel_completed
             method = str(payload["method"])
             dim = int(payload["dim"])
             seed = int(payload["seed"])
@@ -247,6 +250,20 @@ def run_core_benchmark(
                     f"elapsed={elapsed:.1f}s",
                     flush=True,
                 )
+                if method in cpu_methods:
+                    cpu_completed += 1
+                    print(
+                        f"[cpu-stage {cpu_completed}/{cpu_job_total}] "
+                        f"method={method} dim={dim} seed={seed}",
+                        flush=True,
+                    )
+                else:
+                    accel_completed += 1
+                    print(
+                        f"[accel-stage {accel_completed}/{accel_job_total}] "
+                        f"method={method} dim={dim} seed={seed}",
+                        flush=True,
+                    )
             target_progress = cpu_progress if method in cpu_methods else accel_progress
             if target_progress is not None:
                 target_progress.set_postfix({"method": method, "dim": dim, "seed": seed})

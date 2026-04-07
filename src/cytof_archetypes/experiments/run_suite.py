@@ -217,7 +217,7 @@ def run_experiment_suite(config: dict[str, Any]) -> Path:
 
         # 2-7) Core methods in order (NMF, classical AA, deterministic AAE, probabilistic AAE, AE, VAE).
         _phase_start("2/12", "run_core_benchmark (all methods × dims × seeds)")
-        method_order = [
+        _default_method_order = [
             "nmf",
             "classical_archetypes",
             "deterministic_archetypal_ae",
@@ -225,6 +225,7 @@ def run_experiment_suite(config: dict[str, Any]) -> Path:
             "ae",
             "vae",
         ]
+        method_order = resolved_cfg.get("method_order", _default_method_order)
         core_cfg = {
             "seeds": resolved_cfg.get("seeds", [13, 17, 23]),
             "sweeps": resolved_cfg.get("sweeps", {}),
