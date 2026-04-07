@@ -41,8 +41,8 @@ methods:
     device: auto
     hidden_dims: [128, 64]
     dropout: 0.1
-    batch_size: 512
-    lr: 3.0e-4
+    batch_size: 8192   # large batch to amortize CUDA kernel launch overhead on tiny model
+    lr: 1.0e-3         # scaled up from 3e-4 (sqrt scaling for 16x batch increase)
     weight_decay: 1.0e-4
     max_epochs: 1000
     patience: 15
