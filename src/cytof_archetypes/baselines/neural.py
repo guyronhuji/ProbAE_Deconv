@@ -420,9 +420,20 @@ def _safe_torch_device(requested: str | object) -> torch.device:
     return torch.device(req)
 
 
-def _to_loader(x: np.ndarray, batch_size: int, shuffle: bool) -> DataLoader:
-    dataset = TensorDataset(torch.from_numpy(x.astype(np.float32)))
-    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+def _to_loader(
+    x: np.ndarray,
+    batch_size: int,
+    shuffle: bool,
+    device: torch.device | None = None,
+) -> DataLoader:
+    tensor = torch.from_numpy(x.astype(np.float32))
+    # Pre-move to device so DataLoader yields GPU/MPS tensors directly —
+    # no per-batch PCIe transfer on CUDA, no-op on MPS (unified memory).
+    if device is not None and device.type != "cpu":
+        tensor = tensor.to(device)
+    pin = device is not None and device.type == "cuda" and tensor.device.type == "cpu"
+    dataset = TensorDataset(tensor)
+    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, pin_memory=pin)
 
 
 def _training_progress_options(
@@ -442,7 +453,55 @@ def _training_progress_options(
         )
     )
     leave = bool(config.get("training_progress_leave", False))
-    return {"enabled": enabled, "level": level, "desc": desc, "leave": leave}
+    live_plot = bool(config.get("live_loss_plot", False))
+    return {"enabled": enabled, "level": level, "desc": desc, "leave": leave, "live_plot": live_plot}
+
+
+def _make_live_plot(desc: str) -> tuple:
+    """Set up a matplotlib figure for live loss updates in Jupyter.
+
+    Returns (fig, ax, (display_fn, clear_fn)) on success, (None, None, None) otherwise.
+    Does NOT call matplotlib.use() — the Jupyter kernel has already configured the backend.
+    """
+    try:
+        import matplotlib.pyplot as plt
+        from IPython.display import display as _ipy_display, clear_output as _clear_fn
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel("Loss")
+        ax.set_title(desc)
+        plt.tight_layout()
+        plt.close(fig)  # prevent a blank figure showing up at creation time
+        return fig, ax, (_ipy_display, _clear_fn)
+    except Exception:
+        return None, None, None
+
+
+def _update_live_plot(
+    fig: Any,
+    ax: Any,
+    display_fns: tuple,
+    rows: list,
+    best_val: float,
+    patience_counter: int,
+    patience: int,
+    desc: str,
+) -> None:
+    _ipy_display, _clear_fn = display_fns
+    epochs = [r["epoch"] for r in rows]
+    ax.clear()
+    ax.plot(epochs, [r["train_loss"] for r in rows], color="steelblue", linewidth=1.5, label="train")
+    ax.plot(epochs, [r["val_loss"] for r in rows], color="tomato", linewidth=1.5, label="val")
+    if np.isfinite(best_val):
+        ax.axhline(best_val, color="mediumseagreen", linestyle="--", linewidth=1, alpha=0.8,
+                   label=f"best={best_val:.3f}")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Loss")
+    ax.set_title(f"{desc}  |  epoch {epochs[-1]}  |  patience {patience_counter}/{patience}")
+    ax.legend(fontsize=9)
+    fig.tight_layout()
+    _clear_fn(wait=True)
+    _ipy_display(fig)
 
 
 def _run_training_loop(
@@ -455,12 +514,18 @@ def _run_training_loop(
     progress_cfg: dict[str, Any] | None = None,
 ) -> pd.DataFrame:
     progress_cfg = progress_cfg or {}
-    show_training_progress = bool(progress_cfg.get("enabled", False)) and tqdm is not None
+    live_plot = bool(progress_cfg.get("live_plot", False))
+    # tqdm bar suppressed when live_plot is on — epoch/patience info lives in the plot title instead
+    show_training_progress = bool(progress_cfg.get("enabled", False)) and tqdm is not None and not live_plot
     progress_level = str(progress_cfg.get("level", "epoch")).lower()
     if progress_level not in {"epoch", "batch"}:
         progress_level = "epoch"
     progress_desc = str(progress_cfg.get("desc", "training"))
     progress_leave = bool(progress_cfg.get("leave", False))
+    plot_every = max(1, int(progress_cfg.get("plot_every", 1)))
+
+    fig, ax, display_fns = _make_live_plot(progress_desc) if live_plot else (None, None, None)
+    live_plot = fig is not None  # downgrade if IPython / matplotlib setup failed
 
     best_state: dict[str, torch.Tensor] | None = None
     best_val = float("inf")
@@ -533,11 +598,19 @@ def _run_training_loop(
                     }
                 )
 
+            if live_plot and epoch % plot_every == 0:
+                _update_live_plot(fig, ax, display_fns, rows, best_val,
+                                  patience_counter, train_cfg.patience, progress_desc)
+
             if patience_counter >= train_cfg.patience:
                 break
     finally:
         if show_training_progress and hasattr(epoch_iter, "close"):
             epoch_iter.close()
+        if live_plot:
+            # Final redraw to capture the stopping epoch
+            _update_live_plot(fig, ax, display_fns, rows, best_val,
+                              patience_counter, train_cfg.patience, progress_desc)
 
     if best_state is not None:
         model.load_state_dict(best_state)
@@ -555,8 +628,8 @@ def _train_deterministic_archetypal(
 ) -> pd.DataFrame:
     ent_w = float(config.get("entropy_reg_weight", 1e-3))
     div_w = float(config.get("diversity_reg_weight", 1e-3))
-    loader_train = _to_loader(x_train, train_cfg.batch_size, True)
-    loader_val = _to_loader(x_val, train_cfg.batch_size, False) if len(x_val) else _to_loader(x_train[:1], 1, False)
+    loader_train = _to_loader(x_train, train_cfg.batch_size, True, device=device)
+    loader_val = _to_loader(x_val, train_cfg.batch_size, False, device=device) if len(x_val) else _to_loader(x_train[:1], 1, False, device=device)
     opt = torch.optim.AdamW(model.parameters(), lr=train_cfg.lr, weight_decay=train_cfg.weight_decay)
 
     def _loss_eval(batch_x: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
@@ -581,8 +654,8 @@ def _train_probabilistic_archetypal(
     ent_w = float(config.get("entropy_reg_weight", 1e-3))
     div_w = float(config.get("diversity_reg_weight", 1e-3))
     var_w = float(config.get("variance_reg_weight", 1e-5))
-    loader_train = _to_loader(x_train, train_cfg.batch_size, True)
-    loader_val = _to_loader(x_val, train_cfg.batch_size, False) if len(x_val) else _to_loader(x_train[:1], 1, False)
+    loader_train = _to_loader(x_train, train_cfg.batch_size, True, device=device)
+    loader_val = _to_loader(x_val, train_cfg.batch_size, False, device=device) if len(x_val) else _to_loader(x_train[:1], 1, False, device=device)
     opt = torch.optim.AdamW(model.parameters(), lr=train_cfg.lr, weight_decay=train_cfg.weight_decay)
 
     def _loss_eval(batch_x: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
@@ -610,8 +683,8 @@ def _train_ae_like(
     is_vae: bool = False,
     progress_cfg: dict[str, Any] | None = None,
 ) -> pd.DataFrame:
-    loader_train = _to_loader(x_train, train_cfg.batch_size, True)
-    loader_val = _to_loader(x_val, train_cfg.batch_size, False) if len(x_val) else _to_loader(x_train[:1], 1, False)
+    loader_train = _to_loader(x_train, train_cfg.batch_size, True, device=device)
+    loader_val = _to_loader(x_val, train_cfg.batch_size, False, device=device) if len(x_val) else _to_loader(x_train[:1], 1, False, device=device)
     opt = torch.optim.AdamW(model.parameters(), lr=train_cfg.lr, weight_decay=train_cfg.weight_decay)
 
     def _loss_eval(batch_x: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
