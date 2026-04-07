@@ -618,7 +618,8 @@ def _run_training_loop(
                         "val": f"{val_mean:.4f}",
                         "best": best_str,
                         "pat": f"{patience_counter}/{train_cfg.patience}",
-                    }
+                    },
+                    refresh=False,  # avoid double-print in non-TTY (tee/pipe); update fires on next iteration
                 )
 
             if live_plot and epoch % plot_every == 0:
