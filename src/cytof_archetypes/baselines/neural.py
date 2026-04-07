@@ -567,7 +567,8 @@ def _run_training_loop(
     try:
         for epoch in epoch_iter:
             model.train()
-            train_losses: list[float] = []
+            train_loss_acc = None
+            train_batch_count = 0
             batch_iter: Any = train_loader
             batch_bar: Any | None = None
             if show_training_progress and progress_level == "batch":
@@ -588,19 +589,27 @@ def _run_training_loop(
                     if train_cfg.grad_clip > 0:
                         torch.nn.utils.clip_grad_norm_(model.parameters(), train_cfg.grad_clip)
                     optimizer.step()
-                    loss_value = float(loss.item())
-                    train_losses.append(loss_value)
+                    loss_d = loss.detach()
+                    train_loss_acc = loss_d if train_loss_acc is None else train_loss_acc + loss_d
+                    train_batch_count += 1
                     if batch_bar is not None:
-                        batch_bar.set_postfix({"loss": f"{loss_value:.4f}"})
+                        batch_bar.set_postfix({"loss": f"{float(loss_d.item()):.4f}"})
             finally:
                 if batch_bar is not None:
                     batch_bar.close()
 
             model.eval()
             with torch.no_grad():
-                val_losses = [float(loss_eval(batch_x)[0].item()) for (batch_x,) in val_loader]
-            train_mean = float(np.mean(train_losses)) if train_losses else float("nan")
-            val_mean = float(np.mean(val_losses)) if val_losses else float("nan")
+                val_loss_acc = None
+                val_batch_count = 0
+                for (batch_x,) in val_loader:
+                    vl = loss_eval(batch_x)[0].detach()
+                    val_loss_acc = vl if val_loss_acc is None else val_loss_acc + vl
+                    val_batch_count += 1
+
+            # One CUDA sync per epoch instead of ~1800 syncs
+            train_mean = float((train_loss_acc / train_batch_count).item()) if train_batch_count else float("nan")
+            val_mean = float((val_loss_acc / val_batch_count).item()) if val_batch_count else float("nan")
             rows.append({"epoch": epoch, "train_loss": train_mean, "val_loss": val_mean})
 
             if np.isfinite(val_mean) and val_mean < best_val:
