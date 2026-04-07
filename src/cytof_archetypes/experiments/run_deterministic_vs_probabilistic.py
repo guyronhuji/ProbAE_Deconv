@@ -10,6 +10,7 @@ from cytof_archetypes.evaluation.deconvolution_metrics import per_cell_weight_en
 from cytof_archetypes.evaluation.metrics import reconstruction_metrics_per_cell
 from cytof_archetypes.evaluation.plots import plot_heatmap, plot_scatter, plot_scatter2d
 from cytof_archetypes.evaluation.statistics import benjamini_hochberg, paired_wilcoxon
+from cytof_archetypes.evaluation.embeddings import umap_fit_transform_large
 from cytof_archetypes.experiments.common import BenchmarkRun
 
 
@@ -189,9 +190,9 @@ def _embed(values: np.ndarray) -> np.ndarray:
     if values is None or len(values) == 0:
         return np.zeros((0, 2), dtype=np.float32)
     try:
-        import umap
-
-        return umap.UMAP(n_components=2, n_neighbors=20, min_dist=0.2, random_state=0).fit_transform(values)
+        return umap_fit_transform_large(
+            values, n_components=2, n_neighbors=20, min_dist=0.2, random_state=0
+        )
     except Exception:
         pca = PCA(n_components=min(2, values.shape[1]), random_state=0)
         coords = pca.fit_transform(values)

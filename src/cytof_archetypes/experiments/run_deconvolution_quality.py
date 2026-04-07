@@ -19,6 +19,7 @@ from cytof_archetypes.evaluation.plots import (
     plot_histogram,
     plot_scatter2d,
 )
+from cytof_archetypes.evaluation.embeddings import umap_fit_transform_large
 from cytof_archetypes.experiments.common import BenchmarkRun
 
 
@@ -141,9 +142,9 @@ def _best_probabilistic_deconv_run(runs: list[BenchmarkRun]) -> BenchmarkRun | N
 
 def _weight_embedding(weights: np.ndarray) -> np.ndarray:
     try:
-        import umap
-
-        return umap.UMAP(n_components=2, n_neighbors=20, min_dist=0.15, random_state=0).fit_transform(weights)
+        return umap_fit_transform_large(
+            weights, n_components=2, n_neighbors=20, min_dist=0.15, random_state=0
+        )
     except Exception:
         pca = PCA(n_components=min(2, weights.shape[1]), random_state=0)
         coords = pca.fit_transform(weights)
