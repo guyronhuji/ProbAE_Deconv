@@ -135,6 +135,7 @@ class DeterministicArchetypalMethod(BaseMethod):
         x_train: np.ndarray,
         x_val: np.ndarray,
         x_test: np.ndarray,
+        cell_ids_train: np.ndarray,
         labels_val: np.ndarray | None,
         labels_test: np.ndarray | None,
         cell_ids_val: np.ndarray,
@@ -174,6 +175,7 @@ class DeterministicArchetypalMethod(BaseMethod):
             x_train,
             x_val,
             x_test,
+            cell_ids_train,
             labels_val,
             labels_test,
             cell_ids_val,
@@ -201,6 +203,7 @@ class ProbabilisticArchetypalMethod(BaseMethod):
         x_train: np.ndarray,
         x_val: np.ndarray,
         x_test: np.ndarray,
+        cell_ids_train: np.ndarray,
         labels_val: np.ndarray | None,
         labels_test: np.ndarray | None,
         cell_ids_val: np.ndarray,
@@ -240,6 +243,7 @@ class ProbabilisticArchetypalMethod(BaseMethod):
             x_train,
             x_val,
             x_test,
+            cell_ids_train,
             labels_val,
             labels_test,
             cell_ids_val,
@@ -272,6 +276,7 @@ class AEMethod(BaseMethod):
         x_train: np.ndarray,
         x_val: np.ndarray,
         x_test: np.ndarray,
+        cell_ids_train: np.ndarray,
         labels_val: np.ndarray | None,
         labels_test: np.ndarray | None,
         cell_ids_val: np.ndarray,
@@ -306,7 +311,18 @@ class AEMethod(BaseMethod):
             loss_fn=lambda recon, _extra, batch: torch.mean((recon - batch) ** 2),
             progress_cfg=progress_cfg,
         )
-        split_results = _predict_ae(model, x_train, x_val, x_test, labels_val, labels_test, cell_ids_val, cell_ids_test, device)
+        split_results = _predict_ae(
+            model,
+            x_train,
+            x_val,
+            x_test,
+            cell_ids_train,
+            labels_val,
+            labels_test,
+            cell_ids_val,
+            cell_ids_test,
+            device,
+        )
         return MethodRunResult(
             method=self.method_name,
             seed=seed,
@@ -328,6 +344,7 @@ class VAEMethod(BaseMethod):
         x_train: np.ndarray,
         x_val: np.ndarray,
         x_test: np.ndarray,
+        cell_ids_train: np.ndarray,
         labels_val: np.ndarray | None,
         labels_test: np.ndarray | None,
         cell_ids_val: np.ndarray,
@@ -379,6 +396,7 @@ class VAEMethod(BaseMethod):
             x_train,
             x_val,
             x_test,
+            cell_ids_train,
             labels_val,
             labels_test,
             cell_ids_val,
@@ -695,7 +713,10 @@ def _train_probabilistic_archetypal(
 
     def _loss_eval(batch_x: torch.Tensor) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         batch_x = batch_x.to(device)
-        mean, logvar, weights = model(batch_x)
+        out = model(batch_x)
+        mean = out["recon"]
+        logvar = out["logvar"]
+        weights = out["weights"]
         nll = gaussian_nll(batch_x, mean, logvar, reduction="mean")
         loss = (
             nll
@@ -740,6 +761,7 @@ def _predict_deterministic_archetypal(
     x_train: np.ndarray,
     x_val: np.ndarray,
     x_test: np.ndarray,
+    cell_ids_train: np.ndarray,
     labels_val: np.ndarray | None,
     labels_test: np.ndarray | None,
     cell_ids_val: np.ndarray,
@@ -761,7 +783,7 @@ def _predict_deterministic_archetypal(
     te_recon, te_w = _forward(x_test)
 
     return {
-        "train": SplitResult("train", x_train, tr_recon, make_unit_logvar(x_train), tr_w, tr_w, None, np.array([f"train_{i}" for i in range(len(x_train))])),
+        "train": SplitResult("train", x_train, tr_recon, make_unit_logvar(x_train), tr_w, tr_w, None, cell_ids_train),
         "val": SplitResult("val", x_val, va_recon, make_unit_logvar(x_val), va_w, va_w, labels_val, cell_ids_val),
         "test": SplitResult("test", x_test, te_recon, make_unit_logvar(x_test), te_w, te_w, labels_test, cell_ids_test),
     }
@@ -772,6 +794,7 @@ def _predict_probabilistic_archetypal(
     x_train: np.ndarray,
     x_val: np.ndarray,
     x_test: np.ndarray,
+    cell_ids_train: np.ndarray,
     labels_val: np.ndarray | None,
     labels_test: np.ndarray | None,
     cell_ids_val: np.ndarray,
@@ -789,7 +812,10 @@ def _predict_probabilistic_archetypal(
             )
         with torch.no_grad():
             xt = torch.from_numpy(x.astype(np.float32)).to(device)
-            mean, logvar, weights = model(xt)
+            out = model(xt)
+            mean = out["recon"]
+            logvar = out["logvar"]
+            weights = out["weights"]
         return mean.cpu().numpy(), logvar.cpu().numpy(), weights.cpu().numpy()
 
     tr_mean, tr_logvar, tr_w = _forward(x_train)
@@ -797,7 +823,7 @@ def _predict_probabilistic_archetypal(
     te_mean, te_logvar, te_w = _forward(x_test)
 
     return {
-        "train": SplitResult("train", x_train, tr_mean, tr_logvar, tr_w, tr_w, None, np.array([f"train_{i}" for i in range(len(x_train))])),
+        "train": SplitResult("train", x_train, tr_mean, tr_logvar, tr_w, tr_w, None, cell_ids_train),
         "val": SplitResult("val", x_val, va_mean, va_logvar, va_w, va_w, labels_val, cell_ids_val),
         "test": SplitResult("test", x_test, te_mean, te_logvar, te_w, te_w, labels_test, cell_ids_test),
     }
@@ -808,6 +834,7 @@ def _predict_ae(
     x_train: np.ndarray,
     x_val: np.ndarray,
     x_test: np.ndarray,
+    cell_ids_train: np.ndarray,
     labels_val: np.ndarray | None,
     labels_test: np.ndarray | None,
     cell_ids_val: np.ndarray,
@@ -829,7 +856,7 @@ def _predict_ae(
     te_recon, te_latent = _forward(x_test)
 
     return {
-        "train": SplitResult("train", x_train, tr_recon, make_unit_logvar(x_train), tr_latent, None, None, np.array([f"train_{i}" for i in range(len(x_train))])),
+        "train": SplitResult("train", x_train, tr_recon, make_unit_logvar(x_train), tr_latent, None, None, cell_ids_train),
         "val": SplitResult("val", x_val, va_recon, make_unit_logvar(x_val), va_latent, None, labels_val, cell_ids_val),
         "test": SplitResult("test", x_test, te_recon, make_unit_logvar(x_test), te_latent, None, labels_test, cell_ids_test),
     }
@@ -840,6 +867,7 @@ def _predict_vae(
     x_train: np.ndarray,
     x_val: np.ndarray,
     x_test: np.ndarray,
+    cell_ids_train: np.ndarray,
     labels_val: np.ndarray | None,
     labels_test: np.ndarray | None,
     cell_ids_val: np.ndarray,
@@ -863,7 +891,7 @@ def _predict_vae(
     te_recon, te_latent = _forward(x_test)
 
     return {
-        "train": SplitResult("train", x_train, tr_recon, make_unit_logvar(x_train), tr_latent, None, None, np.array([f"train_{i}" for i in range(len(x_train))])),
+        "train": SplitResult("train", x_train, tr_recon, make_unit_logvar(x_train), tr_latent, None, None, cell_ids_train),
         "val": SplitResult("val", x_val, va_recon, make_unit_logvar(x_val), va_latent, None, labels_val, cell_ids_val),
         "test": SplitResult("test", x_test, te_recon, make_unit_logvar(x_test), te_latent, None, labels_test, cell_ids_test),
     }

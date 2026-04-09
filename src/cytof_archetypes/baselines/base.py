@@ -41,6 +41,7 @@ class BaseMethod:
         x_train: np.ndarray,
         x_val: np.ndarray,
         x_test: np.ndarray,
+        cell_ids_train: np.ndarray,
         labels_val: np.ndarray | None,
         labels_test: np.ndarray | None,
         cell_ids_val: np.ndarray,

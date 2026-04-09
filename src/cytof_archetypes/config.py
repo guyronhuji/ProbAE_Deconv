@@ -28,10 +28,18 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "model": {
         "type": "probabilistic_archetypal_autoencoder",
+        "decoder_family": "gaussian",
         "n_archetypes": 8,
         "encoder_hidden_dims": [128, 64],
         "activation": "relu",
         "dropout": 0.1,
+        "use_observed_library_size": True,
+        "size_factor_key": None,
+        "dispersion": "gene",
+    },
+    "data": {
+        "encoder_input": "log1p_normalized",
+        "decoder_target": "raw_counts",
     },
     "loss": {
         "type": "gaussian_nll",

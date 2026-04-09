@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import torch
 
 from cytof_archetypes.models import ProbabilisticArchetypalAutoencoder
 
@@ -15,26 +16,43 @@ def save_archetype_outputs(
 ) -> None:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    means = model.archetype_means.detach().cpu().numpy()
-    logvars = model.archetype_logvars.detach().cpu().numpy()
-    vars_ = np.exp(logvars)
+    if model.decoder_family == "gaussian":
+        means = model.archetype_means.detach().cpu().numpy()
+        logvars = model.archetype_logvars.detach().cpu().numpy()
+        vars_ = np.exp(logvars)
 
-    index = [f"arch_{i}" for i in range(means.shape[0])]
-    mean_df = pd.DataFrame(means, index=index, columns=marker_names)
-    logvar_df = pd.DataFrame(logvars, index=index, columns=marker_names)
-    var_df = pd.DataFrame(vars_, index=index, columns=marker_names)
+        index = [f"arch_{i}" for i in range(means.shape[0])]
+        mean_df = pd.DataFrame(means, index=index, columns=marker_names)
+        logvar_df = pd.DataFrame(logvars, index=index, columns=marker_names)
+        var_df = pd.DataFrame(vars_, index=index, columns=marker_names)
 
-    mean_df.to_csv(out / "archetype_means.csv")
-    logvar_df.to_csv(out / "archetype_logvars.csv")
-    var_df.to_csv(out / "archetype_vars.csv")
+        mean_df.to_csv(out / "archetype_means.csv")
+        logvar_df.to_csv(out / "archetype_logvars.csv")
+        var_df.to_csv(out / "archetype_vars.csv")
 
-    np.save(out / "archetype_means.npy", means)
-    np.save(out / "archetype_logvars.npy", logvars)
-    np.save(out / "archetype_vars.npy", vars_)
+        np.save(out / "archetype_means.npy", means)
+        np.save(out / "archetype_logvars.npy", logvars)
+        np.save(out / "archetype_vars.npy", vars_)
 
-    # With the linear probabilistic decoder, pure archetypes are one-hot decodes.
-    mean_df.to_csv(out / "pure_archetype_means.csv")
-    var_df.to_csv(out / "pure_archetype_vars.csv")
+        # With the linear probabilistic decoder, pure archetypes are one-hot decodes.
+        mean_df.to_csv(out / "pure_archetype_means.csv")
+        var_df.to_csv(out / "pure_archetype_vars.csv")
+        return
+
+    logits = model.archetype_logits.detach().cpu().numpy()
+    fractions = torch.softmax(model.archetype_logits.detach(), dim=1).cpu().numpy()
+    theta = torch.nn.functional.softplus(model.log_theta.detach()).cpu().numpy()
+    index = [f"arch_{i}" for i in range(logits.shape[0])]
+
+    logits_df = pd.DataFrame(logits, index=index, columns=marker_names)
+    frac_df = pd.DataFrame(fractions, index=index, columns=marker_names)
+    theta_df = pd.DataFrame({"gene": marker_names, "theta": theta})
+
+    logits_df.to_csv(out / "archetype_logits.csv")
+    frac_df.to_csv(out / "archetype_gene_fractions.csv")
+    theta_df.to_csv(out / "gene_dispersion.csv", index=False)
+
+    np.save(out / "archetype_logits.npy", logits)
 
 
 def save_cell_weights(

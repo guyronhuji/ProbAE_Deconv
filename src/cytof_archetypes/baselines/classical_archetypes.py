@@ -14,6 +14,7 @@ class ClassicalArchetypeMethod(BaseMethod):
         x_train: np.ndarray,
         x_val: np.ndarray,
         x_test: np.ndarray,
+        cell_ids_train: np.ndarray,
         labels_val: np.ndarray | None,
         labels_test: np.ndarray | None,
         cell_ids_val: np.ndarray,
@@ -60,7 +61,7 @@ class ClassicalArchetypeMethod(BaseMethod):
                     latent=w_train.astype(np.float32),
                     weights=w_train.astype(np.float32),
                     labels=None,
-                    cell_ids=np.array([f"train_{i}" for i in range(len(x_train))]),
+                    cell_ids=cell_ids_train,
                 ),
                 "val": SplitResult(
                     split="val",

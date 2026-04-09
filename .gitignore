@@ -16,12 +16,15 @@ venv/
 
 # Project outputs
 outputs/
+reports/
 notebooks_generated/
 data/*
 !data/.gitkeep
 notebooks/.ipynb_checkpoints/
 .ipynb_checkpoints/
 .runpodkey
+*.tar.gz
+*.h5ad
 
 # IDE
 .idea/

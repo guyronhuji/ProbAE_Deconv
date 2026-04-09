@@ -1,0 +1,52 @@
+seed: 42
+device: "auto"
+
+dataset:
+  name: "levine32"
+  input_path: "data/levine32_processed.h5ad"
+  marker_columns: null
+  label_column: "label"
+  cell_id_column: "cell_id"
+  val_fraction: 0.15
+  test_fraction: 0.15
+
+preprocessing:
+  transform: "none"
+  arcsinh_cofactor: 5.0
+  normalization: "none"
+  clip_min: null
+  clip_max: null
+
+model:
+  type: "archetypal_autoencoder"
+  decoder_family: "nb"
+  n_archetypes: 8
+  encoder_hidden_dims: [256, 128]
+  activation: "relu"
+  dropout: 0.1
+  use_observed_library_size: true
+  size_factor_key: null
+  dispersion: "gene"
+
+data:
+  encoder_input: "log1p_normalized"
+  decoder_target: "raw_counts"
+
+loss:
+  type: "nb_nll"
+  entropy_reg_weight: 1.0e-3
+  diversity_reg_weight: 1.0e-3
+  variance_reg_weight: 0.0
+
+training:
+  batch_size: 256
+  lr: 3.0e-4
+  weight_decay: 1.0e-4
+  max_epochs: 100
+  patience: 15
+  grad_clip: 1.0
+  mixed_precision: false
+
+output:
+  base_dir: "outputs"
+  run_name: "nb_run"

@@ -27,14 +27,14 @@ preprocessing:
   clip_max: null
 
 # Two seeds per K — enough for cross-seed stability estimate
-seeds: [42]
+seeds: [13,42,1234]
 
 method_order:
   - probabilistic_archetypal_ae
 
 sweeps:
-  k_values:  [8]
-  latent_dims: [8]   # latent_dim = k for archetypal AE
+  k_values:  [4,5,6,7,8,9,10,11,12,13,14]
+  latent_dims: [4,5,6,7,8,9,10,11,12,13,14]   # latent_dim = k for archetypal AE
 
 methods:
   probabilistic_archetypal_ae:

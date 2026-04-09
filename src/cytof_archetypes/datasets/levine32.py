@@ -34,7 +34,7 @@ def _load_tabular(path: Path) -> pd.DataFrame:
     return pd.read_csv(path)
 
 
-def _load_h5ad(path: Path, label_column: str, cell_id_column: str) -> pd.DataFrame:
+def _load_h5ad(path: Path, label_column: str | None, cell_id_column: str) -> pd.DataFrame:
     try:
         import anndata as ad
     except ImportError as exc:
@@ -45,10 +45,16 @@ def _load_h5ad(path: Path, label_column: str, cell_id_column: str) -> pd.DataFra
     adata = ad.read_h5ad(path)
     x_df = adata.to_df()
     meta_df = adata.obs.copy()
-    meta_df[cell_id_column] = meta_df.index.astype(str)
-    if label_column not in meta_df.columns:
-        meta_df[label_column] = np.nan
-    frame = x_df.join(meta_df[[cell_id_column, label_column]], how="left")
+    if cell_id_column in meta_df.columns:
+        meta_df[cell_id_column] = meta_df[cell_id_column].astype(str)
+    else:
+        meta_df[cell_id_column] = meta_df.index.astype(str)
+    join_cols = [cell_id_column]
+    if label_column is not None:
+        if label_column not in meta_df.columns:
+            meta_df[label_column] = np.nan
+        join_cols.append(label_column)
+    frame = x_df.join(meta_df[join_cols], how="left")
     return frame.reset_index(drop=True)
 
 

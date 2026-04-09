@@ -1,0 +1,76 @@
+seed: 42
+device: "auto"
+
+raw_data:
+  tenx_dir: "/Users/ronguy/Dropbox/Work/CyTOF/SingleCell/MOme_MPGMP/MultiOme/Data/PDX-2/filtered_feature_bc_matrix"
+
+processed_data:
+  output_h5ad: "data/pdx2_scrna_hvg_counts.h5ad"
+
+qc:
+  min_genes_per_cell: 200
+  min_cells_per_gene: 3
+  max_pct_mt: 20.0
+  min_counts_per_cell: 500
+
+hvg:
+  n_top_genes: 1000
+  flavor: "seurat"
+
+sweep:
+  k_values: [4, 5, 6, 7, 8]
+  seeds: [42]
+
+# Core training config used per sweep run.
+dataset:
+  name: custom_cytof
+  input_path: data/pdx2_scrna_hvg_counts.h5ad
+  marker_columns: null
+  label_column: null
+  cell_id_column: cell_id
+  val_fraction: 0.15
+  test_fraction: 0.15
+
+preprocessing:
+  transform: none
+  arcsinh_cofactor: 5.0
+  normalization: none
+  clip_min: null
+  clip_max: null
+
+model:
+  type: "archetypal_autoencoder"
+  decoder_family: "nb"
+  n_archetypes: 5
+  encoder_hidden_dims: [512, 128]
+  activation: "relu"
+  dropout: 0.1
+  use_observed_library_size: true
+  size_factor_key: null
+  dispersion: "gene"
+
+data:
+  encoder_input: "log1p_normalized"
+  decoder_target: "raw_counts"
+
+loss:
+  type: "nb_nll"
+  entropy_reg_weight: 1.0e-3
+  diversity_reg_weight: 1.0e-3
+  variance_reg_weight: 0.0
+
+training:
+  batch_size: 1024
+  lr: 1.0e-3
+  weight_decay: 1.0e-4
+  max_epochs: 2000
+  patience: 20
+  grad_clip: 1.0
+  mixed_precision: false
+  progress_bar: true
+  progress_bar_leave: false
+  progress_bar_desc: "pdx2-nb"
+
+output:
+  base_dir: outputs/pdx2_scrna_nb_k_sweep/runs
+  run_name: null
