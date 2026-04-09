@@ -2,29 +2,36 @@ seed: 42
 device: "auto"
 
 raw_data:
-  tenx_dir: "/Users/ronguy/Dropbox/Work/CyTOF/SingleCell/MOme_MPGMP/MultiOme/Data/PDX-2/filtered_feature_bc_matrix"
+  tenx_h5: "/Users/ronguy/Dropbox/Work/CyTOF/SingleCell/MOme_MPGMP/MultiOme/Data/BCK_44/filtered_feature_bc_matrix.h5"
 
 processed_data:
-  output_h5ad: "data/pdx2_scrna_hvg_counts.h5ad"
+  output_h5ad: "data/bck44_scrna_hvg_counts.h5ad"
 
 qc:
   min_genes_per_cell: 200
+  max_genes_per_cell: 9000
+  max_counts_per_cell: 80000
+  max_pct_mt: 35.0
+  max_pct_ribo: 65.0
   min_cells_per_gene: 3
-  max_pct_mt: 20.0
   min_counts_per_cell: 500
+  run_doublet_scoring: true
+  filter_strong_doublet: true
+  doublet_score_max: 0.35
 
 hvg:
   n_top_genes: 2000
   flavor: "seurat"
+  span: 0.3
 
 sweep:
-  k_values: [4, 5, 6, 7]
-  seeds: [42,123,456]
+  k_values: [4, 5, 6, 7, 8]
+  seeds: [42]
 
 # Core training config used per sweep run.
 dataset:
   name: custom_cytof
-  input_path: data/pdx2_scrna_hvg_counts.h5ad
+  input_path: data/bck44_scrna_hvg_counts.h5ad
   marker_columns: null
   label_column: null
   cell_id_column: cell_id
@@ -69,8 +76,8 @@ training:
   mixed_precision: false
   progress_bar: true
   progress_bar_leave: false
-  progress_bar_desc: "pdx2-nb"
+  progress_bar_desc: "bck44-nb"
 
 output:
-  base_dir: outputs/pdx2_scrna_nb_k_sweep/runs
+  base_dir: outputs/bck44_scrna_nb_k_sweep/runs
   run_name: null
