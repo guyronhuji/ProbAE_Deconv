@@ -1,6 +1,7 @@
 import torch
 
 from cytof_archetypes.models import (
+    beta_binomial_nll,
     diversity_penalty,
     entropy_penalty,
     gaussian_nll,
@@ -31,4 +32,18 @@ def test_nb_loss_is_finite():
     mu = torch.rand(25, 10) * 3.0 + 0.2
     theta = torch.rand(25, 10) * 2.0 + 0.1
     loss = nb_nll(x, mu, theta)
+    assert torch.isfinite(loss).item()
+
+
+def test_beta_binomial_loss_is_finite():
+    m_counts = torch.poisson(torch.ones(25, 10) * 2.0)
+    n_counts = m_counts.sum(dim=1) + 5.0
+    probs = torch.clamp(torch.rand(25, 10), min=1e-3, max=1.0 - 1e-3)
+    concentration = torch.rand(25, 10) * 10.0 + 0.1
+    loss = beta_binomial_nll(
+        m_counts=m_counts,
+        n_counts=n_counts,
+        probs=probs,
+        concentration=concentration,
+    )
     assert torch.isfinite(loss).item()

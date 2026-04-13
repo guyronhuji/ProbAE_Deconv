@@ -5,6 +5,8 @@ import math
 import torch
 import torch.nn.functional as F
 
+EPS = 1e-8
+
 
 def gaussian_nll(
     target: torch.Tensor,
@@ -28,18 +30,57 @@ def nb_nll(
     theta: torch.Tensor,
     reduction: str = "mean",
 ) -> torch.Tensor:
-    eps = 1e-8
-    theta = torch.clamp(theta, min=eps)
-    mu = torch.clamp(mu, min=eps)
+    theta = torch.clamp(theta, min=EPS)
+    mu = torch.clamp(mu, min=EPS)
     x = torch.clamp(x, min=0.0)
     log_likelihood = (
         torch.lgamma(x + theta)
         - torch.lgamma(theta)
         - torch.lgamma(x + 1.0)
-        + theta * (torch.log(theta) - torch.log(theta + mu + eps))
-        + x * (torch.log(mu) - torch.log(theta + mu + eps))
+        + theta * (torch.log(theta) - torch.log(theta + mu + EPS))
+        + x * (torch.log(mu) - torch.log(theta + mu + EPS))
     )
     per_sample = -log_likelihood.sum(dim=1)
+    if reduction == "none":
+        return per_sample
+    if reduction == "sum":
+        return per_sample.sum()
+    return per_sample.mean()
+
+
+def beta_binomial_nll(
+    m_counts: torch.Tensor,
+    n_counts: torch.Tensor,
+    probs: torch.Tensor,
+    concentration: torch.Tensor,
+    reduction: str = "mean",
+) -> torch.Tensor:
+    probs = torch.clamp(probs, EPS, 1.0 - EPS)
+    concentration = torch.clamp(concentration, min=EPS)
+
+    if n_counts.ndim == 1:
+        n_counts = n_counts.unsqueeze(1).expand_as(probs)
+    n_counts = torch.clamp(n_counts, min=0.0)
+    m_counts = torch.clamp(m_counts, min=0.0)
+    m_counts = torch.minimum(m_counts, n_counts)
+
+    alpha = probs * concentration
+    beta = (1.0 - probs) * concentration
+
+    log_choose = (
+        torch.lgamma(n_counts + 1.0)
+        - torch.lgamma(m_counts + 1.0)
+        - torch.lgamma(n_counts - m_counts + 1.0)
+    )
+    log_beta_ratio = (
+        torch.lgamma(m_counts + alpha)
+        + torch.lgamma(n_counts - m_counts + beta)
+        - torch.lgamma(n_counts + alpha + beta)
+        + torch.lgamma(alpha + beta)
+        - torch.lgamma(alpha)
+        - torch.lgamma(beta)
+    )
+    per_sample = -(log_choose + log_beta_ratio).sum(dim=1)
     if reduction == "none":
         return per_sample
     if reduction == "sum":

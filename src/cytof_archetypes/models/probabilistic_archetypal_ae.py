@@ -29,7 +29,7 @@ class ProbabilisticArchetypalAutoencoder(nn.Module):
         self.n_markers = n_markers
         self.n_archetypes = n_archetypes
         self.decoder_family = str(decoder_family).lower()
-        if self.decoder_family not in {"gaussian", "nb"}:
+        if self.decoder_family not in {"gaussian", "nb", "beta_binomial"}:
             raise ValueError(f"Unsupported decoder_family: {decoder_family}")
         self.dispersion = str(dispersion).lower()
         if self.dispersion not in {"gene"}:
@@ -50,9 +50,17 @@ class ProbabilisticArchetypalAutoencoder(nn.Module):
             self.archetype_logvars = nn.Parameter(torch.zeros(n_archetypes, n_markers))
             self.archetype_logits = None
             self.log_theta = None
-        else:
+            self.log_concentration = None
+        elif self.decoder_family == "nb":
             self.archetype_logits = nn.Parameter(torch.randn(n_archetypes, n_markers))
             self.log_theta = nn.Parameter(torch.zeros(n_markers))
+            self.log_concentration = None
+            self.archetype_means = None
+            self.archetype_logvars = None
+        else:
+            self.archetype_logits = nn.Parameter(torch.randn(n_archetypes, n_markers))
+            self.log_theta = None
+            self.log_concentration = nn.Parameter(torch.zeros(n_markers))
             self.archetype_means = None
             self.archetype_logvars = None
 
@@ -81,6 +89,15 @@ class ProbabilisticArchetypalAutoencoder(nn.Module):
         theta = F.softplus(self.log_theta).view(1, -1).expand_as(mu)
         return mu, theta
 
+    def _decode_beta_binomial(
+        self,
+        weights: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        rho = torch.softmax(self.archetype_logits, dim=-1)
+        probs = torch.clamp(weights @ rho, min=1e-8, max=1.0 - 1e-8)
+        concentration = F.softplus(self.log_concentration).view(1, -1).expand_as(probs)
+        return probs, concentration
+
     def diversity_basis(self) -> torch.Tensor:
         if self.decoder_family == "gaussian":
             return self.archetype_means
@@ -100,15 +117,31 @@ class ProbabilisticArchetypalAutoencoder(nn.Module):
                 "logvar": logvar,
                 "mu": None,
                 "theta": None,
+                "probs": None,
+                "concentration": None,
             }
 
-        if library_size is None:
-            library_size = torch.sum(torch.clamp(x, min=0.0), dim=1)
-        mu, theta = self._decode_nb(weights, library_size)
+        if self.decoder_family == "nb":
+            if library_size is None:
+                library_size = torch.sum(torch.clamp(x, min=0.0), dim=1)
+            mu, theta = self._decode_nb(weights, library_size)
+            return {
+                "weights": weights,
+                "recon": None,
+                "logvar": None,
+                "mu": mu,
+                "theta": theta,
+                "probs": None,
+                "concentration": None,
+            }
+
+        probs, concentration = self._decode_beta_binomial(weights)
         return {
             "weights": weights,
             "recon": None,
             "logvar": None,
-            "mu": mu,
-            "theta": theta,
+            "mu": None,
+            "theta": None,
+            "probs": probs,
+            "concentration": concentration,
         }
