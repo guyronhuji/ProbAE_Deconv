@@ -33,6 +33,7 @@ from cytof_archetypes.evaluation.plots import (
 from cytof_archetypes.io import ensure_dir, next_run_dir, write_json
 from cytof_archetypes.models import (
     ProbabilisticArchetypalAutoencoder,
+    beta_binomial_nll,
     diversity_penalty,
     entropy_penalty,
     gaussian_nll,
@@ -85,6 +86,30 @@ class _BatchDataset(Dataset[dict[str, torch.Tensor]]):
 def _compute_library_size(x_target: np.ndarray) -> np.ndarray:
     lib = np.sum(x_target, axis=1).astype(np.float32)
     return np.clip(lib, 1e-8, None)
+
+
+def _is_count_decoder(decoder_family: str) -> bool:
+    return str(decoder_family).lower() in {"nb", "beta_binomial"}
+
+
+def _recon_metric_key(decoder_family: str) -> str:
+    family = str(decoder_family).lower()
+    if family == "gaussian":
+        return "nll_mean"
+    if family == "nb":
+        return "nb_nll_mean"
+    if family == "beta_binomial":
+        return "beta_binomial_nll_mean"
+    raise ValueError(f"Unsupported decoder_family: {decoder_family}")
+
+
+def _per_cell_nll_col(decoder_family: str) -> str:
+    family = str(decoder_family).lower()
+    if family == "nb":
+        return "nb_nll"
+    if family == "beta_binomial":
+        return "beta_binomial_nll"
+    raise ValueError(f"Unsupported decoder_family for count NLL: {decoder_family}")
 
 
 def _build_encoder_input(x_target: np.ndarray, encoder_input: str) -> np.ndarray:
@@ -142,10 +167,10 @@ def _prepare_data(config: dict[str, Any]) -> PreparedData:
         seed=config.get("seed", 42),
     )
 
-    if decoder_family == "nb":
+    if _is_count_decoder(decoder_family):
         decoder_target = str(data_cfg.get("decoder_target", "raw_counts")).lower()
         if decoder_target != "raw_counts":
-            raise ValueError("NB decoder currently requires data.decoder_target='raw_counts'.")
+            raise ValueError(f"{decoder_family} decoder currently requires data.decoder_target='raw_counts'.")
         preprocessor = None
         train = _prepare_nb_split(bundle.train.x, bundle.train.frame, model_cfg=model_cfg, data_cfg=data_cfg)
         val = _prepare_nb_split(bundle.val.x, bundle.val.frame, model_cfg=model_cfg, data_cfg=data_cfg)
@@ -201,6 +226,16 @@ def _loss_terms(
     recon_weight = float(loss_cfg.get("reconstruction_weight", 1.0))
     if decoder_family == "nb":
         recon = nb_nll(batch["x_target"], out["mu"], out["theta"], reduction="mean")
+        var_reg = torch.zeros((), device=batch["x_encoder"].device)
+    elif decoder_family == "beta_binomial":
+        n_counts = batch["library_size"].unsqueeze(1).expand_as(out["probs"])
+        recon = beta_binomial_nll(
+            m_counts=batch["x_target"],
+            n_counts=n_counts,
+            probs=out["probs"],
+            concentration=out["concentration"],
+            reduction="mean",
+        )
         var_reg = torch.zeros((), device=batch["x_encoder"].device)
     else:
         recon = gaussian_nll(batch["x_target"], out["recon"], out["logvar"], reduction="mean")
@@ -288,6 +323,8 @@ def _predict(
             "logvar": empty_g,
             "mu": empty_g,
             "theta": empty_g,
+            "probs": empty_g,
+            "concentration": empty_g,
         }
     model.eval()
     loader = _make_loader(split, batch_size=2048, shuffle=False)
@@ -295,6 +332,8 @@ def _predict(
     logvars: list[np.ndarray] = []
     mus: list[np.ndarray] = []
     thetas: list[np.ndarray] = []
+    probs: list[np.ndarray] = []
+    concentrations: list[np.ndarray] = []
     weights: list[np.ndarray] = []
     with torch.no_grad():
         for batch in loader:
@@ -307,16 +346,26 @@ def _predict(
             if out["mu"] is not None:
                 mus.append(out["mu"].cpu().numpy())
                 thetas.append(out["theta"].cpu().numpy())
+            if out["probs"] is not None:
+                probs_batch = out["probs"]
+                probs.append(probs_batch.cpu().numpy())
+                mus.append((batch_t["library_size"].unsqueeze(1) * probs_batch).cpu().numpy())
+                concentration_batch = out["concentration"]
+                concentrations.append(concentration_batch.cpu().numpy())
     return {
         "weights": np.vstack(weights) if weights else np.zeros((0, model.n_archetypes), dtype=np.float32),
         "recon": np.vstack(recons) if recons else np.zeros((0, model.n_markers), dtype=np.float32),
         "logvar": np.vstack(logvars) if logvars else np.zeros((0, model.n_markers), dtype=np.float32),
         "mu": np.vstack(mus) if mus else np.zeros((0, model.n_markers), dtype=np.float32),
         "theta": np.vstack(thetas) if thetas else np.zeros((0, model.n_markers), dtype=np.float32),
+        "probs": np.vstack(probs) if probs else np.zeros((0, model.n_markers), dtype=np.float32),
+        "concentration": np.vstack(concentrations)
+        if concentrations
+        else np.zeros((0, model.n_markers), dtype=np.float32),
     }
 
 
-def _nb_per_gene_frame(x_target: np.ndarray, mu: np.ndarray, marker_names: list[str]) -> pd.DataFrame:
+def _count_per_gene_frame(x_target: np.ndarray, mu: np.ndarray, marker_names: list[str]) -> pd.DataFrame:
     if len(x_target) == 0:
         return pd.DataFrame(columns=["gene", "target_mean", "mu_mean", "mse", "mae"])
     mse = np.mean((x_target - mu) ** 2, axis=0)
@@ -332,26 +381,42 @@ def _nb_per_gene_frame(x_target: np.ndarray, mu: np.ndarray, marker_names: list[
     )
 
 
-def _nb_per_cell_frame(
+def _count_per_cell_frame(
     x_target: np.ndarray,
     mu: np.ndarray,
-    theta: np.ndarray,
+    library_size: np.ndarray,
+    theta: np.ndarray | None,
+    probs: np.ndarray | None,
+    concentration: np.ndarray | None,
+    decoder_family: str,
     cell_ids: np.ndarray,
     labels: np.ndarray | None,
 ) -> pd.DataFrame:
+    nll_col = _per_cell_nll_col(decoder_family)
     if len(x_target) == 0:
-        return pd.DataFrame(columns=["cell_id", "nb_nll", "mse", "mae", "label"])
+        return pd.DataFrame(columns=["cell_id", nll_col, "mse", "mae", "label"])
     with torch.no_grad():
-        nll = nb_nll(
-            torch.from_numpy(x_target.astype(np.float32)),
-            torch.from_numpy(mu.astype(np.float32)),
-            torch.from_numpy(theta.astype(np.float32)),
-            reduction="none",
-        ).cpu().numpy()
+        if decoder_family == "nb":
+            nll = nb_nll(
+                torch.from_numpy(x_target.astype(np.float32)),
+                torch.from_numpy(mu.astype(np.float32)),
+                torch.from_numpy(theta.astype(np.float32)),
+                reduction="none",
+            ).cpu().numpy()
+        elif decoder_family == "beta_binomial":
+            nll = beta_binomial_nll(
+                m_counts=torch.from_numpy(x_target.astype(np.float32)),
+                n_counts=torch.from_numpy(library_size.astype(np.float32)),
+                probs=torch.from_numpy(probs.astype(np.float32)),
+                concentration=torch.from_numpy(concentration.astype(np.float32)),
+                reduction="none",
+            ).cpu().numpy()
+        else:
+            raise ValueError(f"Unsupported count decoder for per-cell metrics: {decoder_family}")
     frame = pd.DataFrame(
         {
             "cell_id": cell_ids,
-            "nb_nll": nll,
+            nll_col: nll,
             "mse": np.mean((x_target - mu) ** 2, axis=1),
             "mae": np.mean(np.abs(x_target - mu), axis=1),
         }
@@ -394,21 +459,26 @@ def _evaluate_split_outputs(
             out_path=metrics_dir / f"{split_name}_diagnostics.csv",
         )
     else:
-        per_cell_df = _nb_per_cell_frame(
+        per_cell_nll_key = _per_cell_nll_col(model.decoder_family)
+        per_cell_df = _count_per_cell_frame(
             x_target=split.x_target,
             mu=pred["mu"],
-            theta=pred["theta"],
+            library_size=split.library_size,
+            theta=pred["theta"] if model.decoder_family == "nb" else None,
+            probs=pred["probs"] if model.decoder_family == "beta_binomial" else None,
+            concentration=pred["concentration"] if model.decoder_family == "beta_binomial" else None,
+            decoder_family=model.decoder_family,
             cell_ids=cell_ids,
             labels=labels,
         )
-        per_gene_df = _nb_per_gene_frame(
+        per_gene_df = _count_per_gene_frame(
             x_target=split.x_target,
             mu=pred["mu"],
             marker_names=marker_names,
         )
         metrics = {
-            "nb_nll_mean": float(per_cell_df["nb_nll"].mean()) if len(per_cell_df) else float("nan"),
-            "nb_nll_std": float(per_cell_df["nb_nll"].std()) if len(per_cell_df) else float("nan"),
+            f"{per_cell_nll_key}_mean": float(per_cell_df[per_cell_nll_key].mean()) if len(per_cell_df) else float("nan"),
+            f"{per_cell_nll_key}_std": float(per_cell_df[per_cell_nll_key].std()) if len(per_cell_df) else float("nan"),
             "mse_mean": float(per_cell_df["mse"].mean()) if len(per_cell_df) else float("nan"),
             "mae_mean": float(per_cell_df["mae"].mean()) if len(per_cell_df) else float("nan"),
         }
@@ -426,7 +496,7 @@ def _evaluate_split_outputs(
 
 def _write_run_readme(run_dir: Path, config: dict[str, Any], val_metrics: dict[str, float], test_metrics: dict[str, float]) -> None:
     decoder_family = str(config.get("model", {}).get("decoder_family", "gaussian")).lower()
-    nll_key = "nll_mean" if decoder_family == "gaussian" else "nb_nll_mean"
+    nll_key = _recon_metric_key(decoder_family)
     lines = [
         "# Run Summary",
         "",
@@ -532,7 +602,7 @@ def _finalize_outputs(
     full_weights.insert(1, "split", combined_split)
     full_weights.to_csv(weights_dir / "cell_weights.csv", index=False)
 
-    summary_key = "nll_mean" if model.decoder_family == "gaussian" else "nb_nll_mean"
+    summary_key = _recon_metric_key(model.decoder_family)
     write_json(
         {
             "decoder_family": model.decoder_family,
@@ -595,7 +665,7 @@ def train_from_config(config: dict[str, Any]) -> Path:
 
     prepared = _prepare_data(config)
     if prepared.preprocessor is None:
-        write_json({"mode": "none", "reason": "nb_decoder_uses_raw_count_pipeline"}, run_dir / "preprocessor.json")
+        write_json({"mode": "none", "reason": "count_decoder_uses_raw_count_pipeline"}, run_dir / "preprocessor.json")
     else:
         write_json(prepared.preprocessor.state_dict(), run_dir / "preprocessor.json")
 

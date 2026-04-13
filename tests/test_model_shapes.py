@@ -1,6 +1,10 @@
 import torch
 
-from cytof_archetypes.models import ProbabilisticArchetypalAutoencoder, nb_nll
+from cytof_archetypes.models import (
+    ProbabilisticArchetypalAutoencoder,
+    beta_binomial_nll,
+    nb_nll,
+)
 
 
 def test_forward_shapes_gaussian():
@@ -43,4 +47,36 @@ def test_forward_shapes_nb_and_positive_params():
     assert torch.allclose(weights.sum(dim=1), torch.ones(12), atol=1e-6)
 
     loss = nb_nll(x_target, out["mu"], out["theta"])
+    assert torch.isfinite(loss).item()
+
+
+def test_forward_shapes_beta_binomial_and_positive_params():
+    model = ProbabilisticArchetypalAutoencoder(
+        n_markers=20,
+        n_archetypes=5,
+        encoder_hidden_dims=(32, 16),
+        dropout=0.0,
+        decoder_family="beta_binomial",
+    )
+    x_target = torch.poisson(torch.ones(12, 20) * 2.5)
+    lib = x_target.sum(dim=1)
+    out = model(x_target, library_size=lib)
+    assert out["recon"] is None
+    assert out["logvar"] is None
+    assert out["mu"] is None
+    assert out["theta"] is None
+    assert out["probs"].shape == (12, 20)
+    assert out["concentration"].shape == (12, 20)
+    assert torch.all(out["probs"] > 0)
+    assert torch.all(out["probs"] < 1)
+    assert torch.all(out["concentration"] > 0)
+    weights = out["weights"]
+    assert torch.allclose(weights.sum(dim=1), torch.ones(12), atol=1e-6)
+
+    loss = beta_binomial_nll(
+        m_counts=x_target,
+        n_counts=lib,
+        probs=out["probs"],
+        concentration=out["concentration"],
+    )
     assert torch.isfinite(loss).item()

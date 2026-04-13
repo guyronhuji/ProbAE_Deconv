@@ -197,6 +197,9 @@ Core shapes in training and inference:
 - NB decoder output:
   - `mu`: `(n_cells, n_markers)`
   - `theta`: `(n_cells, n_markers)` after broadcast
+- Beta-binomial decoder output:
+  - `probs`: `(n_cells, n_markers)`
+  - `concentration`: `(n_cells, n_markers)` after broadcast
 
 ## 6. Configuration Reference
 
@@ -211,12 +214,12 @@ Core shapes in training and inference:
 - `preprocessing` (`dict`)
   - `transform`, `arcsinh_cofactor`, `normalization`, `clip_min`, `clip_max`
 - `model` (`dict`)
-  - `decoder_family`: `gaussian` or `nb`
+  - `decoder_family`: `gaussian`, `nb`, or `beta_binomial`
   - `n_archetypes`, `encoder_hidden_dims`, `activation`, `dropout`
   - NB-specific: `use_observed_library_size`, `size_factor_key`, `dispersion` (`gene`)
 - `data` (`dict`)
   - `encoder_input` (`raw_counts` or `log1p_normalized`)
-  - `decoder_target` (NB currently requires `raw_counts`)
+  - `decoder_target` (NB and beta-binomial currently require `raw_counts`)
 - `loss` (`dict`)
   - `reconstruction_weight` (optional, default 1.0)
   - `entropy_reg_weight`, `diversity_reg_weight`, `variance_reg_weight`
@@ -256,7 +259,7 @@ Multiprocessing is implemented with `multiprocessing.get_context("spawn").Pool(.
 Typical structure:
 
 - `config_resolved.yaml`: full resolved config
-- `preprocessor.json`: fitted preprocessing state or NB bypass marker
+- `preprocessor.json`: fitted preprocessing state or count-decoder bypass marker
 - `model_summary.txt`: architecture and parameter counts
 - `training_log.csv`: per-epoch metrics
 - `training_summary.json`: training summary
@@ -267,6 +270,7 @@ Typical structure:
 - `archetypes/`
   - gaussian: means/logvars/vars (`csv` + `npy`)
   - nb: logits, gene fractions, gene dispersion
+  - beta-binomial: logits, gene fractions, gene concentration
 - `weights/`
   - split-level cell weights, full `cell_weights.csv`, class means
 - `metrics/`

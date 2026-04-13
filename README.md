@@ -53,6 +53,7 @@ cytof-archetypes-run-suite --config configs/experiment_suite.yaml
 
 - `gaussian`: recommended for dense continuous marker data (CyTOF).
 - `nb`: recommended for count-based data (scRNA-seq), using an NB likelihood with gene-wise dispersion.
+- `beta_binomial`: overdispersed count decoder using per-gene beta-binomial likelihood with learned concentration.
 
 `model.decoder_family` controls the decoder path. For NB runs, batches include:
 - `x_encoder` (configured by `data.encoder_input`)
@@ -64,6 +65,7 @@ Quick start:
 ```bash
 python train.py --config configs/gaussian.yaml
 python train.py --config configs/nb.yaml
+python train.py --config configs/beta_binomial.yaml
 ```
 
 ## RunPod workflow

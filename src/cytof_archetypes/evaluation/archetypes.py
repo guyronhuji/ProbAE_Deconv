@@ -41,18 +41,23 @@ def save_archetype_outputs(
 
     logits = model.archetype_logits.detach().cpu().numpy()
     fractions = torch.softmax(model.archetype_logits.detach(), dim=1).cpu().numpy()
-    theta = torch.nn.functional.softplus(model.log_theta.detach()).cpu().numpy()
     index = [f"arch_{i}" for i in range(logits.shape[0])]
 
     logits_df = pd.DataFrame(logits, index=index, columns=marker_names)
     frac_df = pd.DataFrame(fractions, index=index, columns=marker_names)
-    theta_df = pd.DataFrame({"gene": marker_names, "theta": theta})
 
     logits_df.to_csv(out / "archetype_logits.csv")
     frac_df.to_csv(out / "archetype_gene_fractions.csv")
-    theta_df.to_csv(out / "gene_dispersion.csv", index=False)
-
     np.save(out / "archetype_logits.npy", logits)
+
+    if model.decoder_family == "nb":
+        theta = torch.nn.functional.softplus(model.log_theta.detach()).cpu().numpy()
+        theta_df = pd.DataFrame({"gene": marker_names, "theta": theta})
+        theta_df.to_csv(out / "gene_dispersion.csv", index=False)
+    elif model.decoder_family == "beta_binomial":
+        concentration = torch.nn.functional.softplus(model.log_concentration.detach()).cpu().numpy()
+        concentration_df = pd.DataFrame({"gene": marker_names, "concentration": concentration})
+        concentration_df.to_csv(out / "gene_concentration.csv", index=False)
 
 
 def save_cell_weights(
