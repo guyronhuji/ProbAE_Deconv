@@ -42,3 +42,19 @@ comparisons/.mplconfig/
 comparisons/.numba_cache/
 comparisons/.numba_cache_test/
 comparisons/outputs_tmp_progress_check/
+
+# Data artifacts (keep local, never version)
+tmp_*.csv
+tmp_*.tsv
+PDAC/*.png
+*.npz
+*.npy
+*.h5
+*.parquet
+*.feather
+*.pkl
+*.joblib
+*.pt
+*.pth
+*.ckpt
+*.zip
