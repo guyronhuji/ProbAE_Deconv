@@ -10,7 +10,29 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 try:
-    from tqdm.auto import tqdm
+    from IPython import get_ipython
+except Exception:  # pragma: no cover - IPython optional
+    get_ipython = None  # type: ignore[assignment]
+
+
+def _in_notebook() -> bool:
+    if get_ipython is None:
+        return False
+    try:
+        shell = get_ipython()
+        if shell is None:
+            return False
+        return shell.__class__.__name__ == "ZMQInteractiveShell"
+    except Exception:
+        return False
+
+
+try:
+    if _in_notebook():
+        # Force Jupyter widget-style progress bars to avoid per-epoch newline spam.
+        from tqdm.notebook import tqdm
+    else:
+        from tqdm.auto import tqdm
 except Exception:  # pragma: no cover - tqdm optional
     tqdm = None
 
@@ -498,7 +520,17 @@ def _training_progress_options(
     )
     leave = bool(config.get("training_progress_leave", False))
     live_plot = bool(config.get("live_loss_plot", False))
-    return {"enabled": enabled, "level": level, "desc": desc, "leave": leave, "live_plot": live_plot}
+    log_every_epochs = int(config.get("training_progress_log_every_epochs", 500))
+    if log_every_epochs <= 0:
+        log_every_epochs = 500
+    return {
+        "enabled": enabled,
+        "level": level,
+        "desc": desc,
+        "leave": leave,
+        "live_plot": live_plot,
+        "log_every_epochs": log_every_epochs,
+    }
 
 
 def _make_live_plot(desc: str) -> tuple:
@@ -559,14 +591,14 @@ def _run_training_loop(
 ) -> pd.DataFrame:
     progress_cfg = progress_cfg or {}
     live_plot = bool(progress_cfg.get("live_plot", False))
-    # tqdm bar suppressed when live_plot is on — epoch/patience info lives in the plot title instead
-    show_training_progress = bool(progress_cfg.get("enabled", False)) and tqdm is not None and not live_plot
+    # When live_plot is off, emit lightweight textual logs instead of tqdm bars.
+    show_training_progress = bool(progress_cfg.get("enabled", False)) and not live_plot
     progress_level = str(progress_cfg.get("level", "epoch")).lower()
     if progress_level not in {"epoch", "batch"}:
         progress_level = "epoch"
     progress_desc = str(progress_cfg.get("desc", "training"))
-    progress_leave = bool(progress_cfg.get("leave", False))
     plot_every = max(1, int(progress_cfg.get("plot_every", 1)))
+    log_every_epochs = max(1, int(progress_cfg.get("log_every_epochs", 500)))
 
     fig, ax, display_fns = _make_live_plot(progress_desc) if live_plot else (None, None, None)
     live_plot = fig is not None  # downgrade if IPython / matplotlib setup failed
@@ -576,14 +608,17 @@ def _run_training_loop(
     patience_counter = 0
     rows: list[dict[str, float]] = []
     epoch_iter: Any = range(1, train_cfg.max_epochs + 1)
-    if show_training_progress:
-        epoch_iter = tqdm(
+    use_epoch_bar = bool(show_training_progress and progress_level == "epoch" and tqdm is not None)
+    epoch_bar: Any = None
+    if use_epoch_bar:
+        epoch_bar = tqdm(
             epoch_iter,
             total=train_cfg.max_epochs,
-            desc=f"{progress_desc} [epoch]",
+            desc=progress_desc,
             unit="epoch",
-            leave=progress_leave,
+            leave=bool(progress_cfg.get("leave", False)),
         )
+        epoch_iter = epoch_bar
 
     try:
         for epoch in epoch_iter:
@@ -591,16 +626,6 @@ def _run_training_loop(
             train_loss_acc = torch.zeros((), device=next(model.parameters()).device)
             train_batch_count = 0
             batch_iter: Any = train_loader
-            batch_bar: Any | None = None
-            if show_training_progress and progress_level == "batch":
-                batch_bar = tqdm(
-                    train_loader,
-                    total=len(train_loader),
-                    desc=f"{progress_desc} [epoch {epoch}]",
-                    unit="batch",
-                    leave=False,
-                )
-                batch_iter = batch_bar
 
             try:
                 for (batch_x,) in batch_iter:
@@ -613,11 +638,8 @@ def _run_training_loop(
                     with torch.no_grad():
                         train_loss_acc.add_(loss)
                     train_batch_count += 1
-                    if batch_bar is not None:
-                        batch_bar.set_postfix({"loss": f"{float(loss_d.item()):.4f}"})
             finally:
-                if batch_bar is not None:
-                    batch_bar.close()
+                pass
 
             model.eval()
             with torch.no_grad():
@@ -639,16 +661,26 @@ def _run_training_loop(
             else:
                 patience_counter += 1
 
-            if show_training_progress and hasattr(epoch_iter, "set_postfix"):
-                best_str = f"{best_val:.4f}" if np.isfinite(best_val) else "nan"
-                epoch_iter.set_postfix(
-                    {
-                        "train": f"{train_mean:.4f}",
-                        "val": f"{val_mean:.4f}",
-                        "best": best_str,
-                        "pat": f"{patience_counter}/{train_cfg.patience}",
-                    },
-                    refresh=False,  # avoid double-print in non-TTY (tee/pipe); update fires on next iteration
+            if show_training_progress and not use_epoch_bar:
+                is_log_epoch = (epoch % log_every_epochs == 0) or (epoch == train_cfg.max_epochs)
+                will_early_stop = patience_counter >= train_cfg.patience
+                if is_log_epoch or will_early_stop:
+                    best_str = f"{best_val:.4f}" if np.isfinite(best_val) else "nan"
+                    print(
+                        (
+                            f"{progress_desc} | epoch {epoch}/{train_cfg.max_epochs} "
+                            f"| train={train_mean:.4f} | val={val_mean:.4f} "
+                            f"| best={best_str} | patience={patience_counter}/{train_cfg.patience}"
+                        ),
+                        flush=True,
+                    )
+            if use_epoch_bar and hasattr(epoch_bar, "set_postfix"):
+                best_postfix = float(best_val) if np.isfinite(best_val) else float("nan")
+                epoch_bar.set_postfix(
+                    train=f"{train_mean:.4f}",
+                    val=f"{val_mean:.4f}",
+                    best=f"{best_postfix:.4f}" if np.isfinite(best_postfix) else "nan",
+                    patience=f"{patience_counter}/{train_cfg.patience}",
                 )
 
             if live_plot and epoch % plot_every == 0:
@@ -656,10 +688,15 @@ def _run_training_loop(
                                   patience_counter, train_cfg.patience, progress_desc)
 
             if patience_counter >= train_cfg.patience:
+                if show_training_progress and not use_epoch_bar:
+                    print(
+                        f"{progress_desc} | early stopping at epoch {epoch} (patience={train_cfg.patience})",
+                        flush=True,
+                    )
                 break
     finally:
-        if show_training_progress and hasattr(epoch_iter, "close"):
-            epoch_iter.close()
+        if use_epoch_bar and hasattr(epoch_bar, "close"):
+            epoch_bar.close()
         if live_plot:
             # Final redraw to capture the stopping epoch
             _update_live_plot(fig, ax, display_fns, rows, best_val,

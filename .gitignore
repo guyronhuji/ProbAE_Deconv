@@ -30,3 +30,15 @@ notebooks/.ipynb_checkpoints/
 .idea/
 .vscode/
 .DS_Store
+
+# Local agent/tooling state
+.claude/
+.wolf/
+CLAUDE.md
+
+# Local experiment/cache artifacts
+tmp/
+comparisons/.mplconfig/
+comparisons/.numba_cache/
+comparisons/.numba_cache_test/
+comparisons/outputs_tmp_progress_check/

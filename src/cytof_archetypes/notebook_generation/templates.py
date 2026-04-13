@@ -262,7 +262,7 @@ def notebook_08_test_suite_runner() -> nbf.NotebookNode:
             "from pathlib import Path\n"
             "\n"
             "try:\n"
-            "    from tqdm.auto import tqdm\n"
+            "    from tqdm import tqdm\n"
             "except Exception:\n"
             "    class tqdm:  # lightweight fallback when tqdm is unavailable\n"
             "        def __init__(self, iterable, total=None, desc='', unit='it'):\n"

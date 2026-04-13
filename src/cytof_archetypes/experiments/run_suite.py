@@ -8,7 +8,7 @@ from typing import Any
 import pandas as pd
 import yaml
 try:
-    from tqdm.auto import tqdm
+    from tqdm import tqdm
 except Exception:  # pragma: no cover - tqdm optional
     tqdm = None
 

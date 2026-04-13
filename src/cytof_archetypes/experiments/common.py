@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 try:
-    from tqdm.auto import tqdm
+    from tqdm import tqdm
 except Exception:  # pragma: no cover - tqdm optional
     tqdm = None
 

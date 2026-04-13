@@ -10,7 +10,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 try:
-    from tqdm.auto import tqdm
+    from tqdm import tqdm
 except Exception:  # pragma: no cover - tqdm optional
     tqdm = None
 

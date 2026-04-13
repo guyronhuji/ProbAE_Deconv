@@ -1,0 +1,97 @@
+seed: 42
+output_dir: comparisons/outputs
+show_progress: false
+show_run_logs: true
+show_training_progress: true
+training_progress_level: epoch
+training_progress_leave: false
+training_progress_log_every_epochs: 500
+cpu_multiprocessing_workers: 8
+cpu_parallel_methods:
+- nmf
+- classical_archetypes
+gpu_multiprocessing_workers: 1
+gpu_parallel_methods:
+- deterministic_archetypal_ae
+- probabilistic_archetypal_ae
+dataset:
+  name: levine32
+  input_path: data/levine32_processed.h5ad
+  marker_columns: null
+  label_column: label
+  cell_id_column: cell_id
+  val_fraction: 0.15
+  test_fraction: 0.15
+preprocessing:
+  transform: none
+  arcsinh_cofactor: 5.0
+  normalization: none
+  clip_min: null
+  clip_max: null
+seeds:
+- 13
+- 17
+- 23
+method_order:
+- nmf
+- classical_archetypes
+- deterministic_archetypal_ae
+- probabilistic_archetypal_ae
+sweeps:
+  k_values:
+  - 6
+  - 7
+  - 8
+  - 9
+  - 10
+  - 11
+  - 12
+  latent_dims:
+  - 6
+  - 7
+  - 8
+  - 9
+  - 10
+  - 11
+  - 12
+methods:
+  nmf:
+    max_iter: 200
+  classical_archetypes:
+    n_iters: 50
+    pg_steps: 10
+    lr: 0.1
+  deterministic_archetypal_ae:
+    device: auto
+    hidden_dims:
+    - 512
+    - 128
+    dropout: 0.1
+    batch_size: 32768
+    lr: 0.0003
+    weight_decay: 0.0001
+    max_epochs: 3000
+    patience: 20
+    grad_clip: 1.0
+    entropy_reg_weight: 0.001
+    diversity_reg_weight: 0.001
+  probabilistic_archetypal_ae:
+    device: auto
+    hidden_dims:
+    - 512
+    - 128
+    dropout: 0.1
+    batch_size: 32768
+    lr: 0.0003
+    weight_decay: 0.0001
+    max_epochs: 3000
+    patience: 20
+    grad_clip: 1.0
+    entropy_reg_weight: 0.001
+    diversity_reg_weight: 0.001
+    variance_reg_weight: 1.0e-05
+marker_groups: {}
+secondary_dataset:
+  enabled: false
+auxiliary_models:
+  enabled: false

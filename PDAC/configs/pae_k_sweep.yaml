@@ -1,0 +1,89 @@
+seed: 42
+output_dir: outputs/PDAC/pae_k_sweep
+show_progress: true
+show_run_logs: true
+show_training_progress: true
+training_progress_level: epoch
+training_progress_leave: false
+
+# Parallelism uses multiprocessing in the core benchmark runner.
+cpu_multiprocessing_workers: 1
+cpu_parallel_methods: []
+gpu_multiprocessing_workers: 1
+gpu_parallel_methods: [probabilistic_archetypal_ae]
+
+dataset:
+  name: custom_cytof
+  input_path: data/PDAC_normalized.h5ad
+  # Exclude normalization control channels from training after normalization.
+  marker_columns:
+    - CD11b
+    - H2A
+    - KRT5
+    - H4K20me3
+    - Pan-KRT
+    - Vimentin
+    - KRT7
+    - CD24
+    - pERK
+    - H3K27me3
+    - MBD
+    - H3K9me2
+    - H2AK119ub
+    - GAL4
+    - GATA6
+    - E-cadherin
+    - H3K27ac
+    - OCT4
+    - pH3
+    - H3K27me2
+    - KRT17
+    - EZH2
+    - H3K4me3
+    - H3K79me2
+    - TSPAN8
+    - pRb
+    - H3K36me3
+    - pH2A.X
+    - H3K36me2
+    - H4K16ac
+    - H3K4me1
+    - H3K9ac
+    - CD44
+    - KI67
+    - H2BK5ac
+    - H3K9me3
+    - H3K4me2
+  label_column: Treatment
+  cell_id_column: cell_id
+  val_fraction: 0.15
+  test_fraction: 0.15
+
+preprocessing:
+  transform: none
+  arcsinh_cofactor: 5.0
+  normalization: zscore
+  clip_min: null
+  clip_max: null
+
+# 3 random seeds, as requested.
+seeds: [42, 123, 456]
+
+sweeps:
+  k_values: [7,8,9,10]
+  latent_dims: [7,8,9,10]
+
+methods:
+  probabilistic_archetypal_ae:
+    device: auto
+    hidden_dims: [512, 128]
+    dropout: 0.1
+    batch_size: 4096
+    lr: 1.0e-3
+    weight_decay: 1.0e-4
+    max_epochs: 3000
+    patience: 20
+    grad_clip: 1.0
+    entropy_reg_weight: 1.0e-3
+    diversity_reg_weight: 5.0e-3
+    variance_reg_weight: 1.0e-4
