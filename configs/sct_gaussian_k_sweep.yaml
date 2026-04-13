@@ -4,6 +4,7 @@
 # The notebook builds all paths from this single field.
 #
 sample: "PDX_02"   # "PDX_02" | "BCK_44"
+device: "auto"     # auto → MPS on Apple Silicon, CUDA on GPU, else CPU
 
 data:
   h5seurat_dir: "/Users/ronguy/Dropbox/Work/CyTOF/SingleCell/MOme_MPGMP/MultiOme/Output"

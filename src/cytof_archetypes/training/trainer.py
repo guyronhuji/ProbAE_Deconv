@@ -684,20 +684,6 @@ def train_from_config(config: dict[str, Any]) -> Path:
     trainable_params = int(sum(p.numel() for p in model.parameters() if p.requires_grad))
     frozen_params = int(total_params - trainable_params)
 
-    print("\n=== Model Architecture ===")
-    print(model)
-    print("\n=== Model Parameters ===")
-    print(f"decoder_family: {decoder_family}")
-    print(f"total_params: {total_params:,}")
-    print(f"trainable_params: {trainable_params:,}")
-    print(f"frozen_params: {frozen_params:,}")
-    print("parameter_tensors:")
-    for name, param in model.named_parameters():
-        shape = tuple(int(x) for x in param.shape)
-        print(
-            f"  - {name}: shape={shape}, count={param.numel():,}, requires_grad={bool(param.requires_grad)}"
-        )
-    print("")
     logger.info(
         "model decoder_family=%s total_params=%d trainable_params=%d frozen_params=%d",
         decoder_family,
