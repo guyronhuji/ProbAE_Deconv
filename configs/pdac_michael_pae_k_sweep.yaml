@@ -1,0 +1,61 @@
+seed: 42
+output_dir: outputs/pdac_michael_pae_k_sweep
+show_progress: true
+show_run_logs: true
+show_training_progress: true
+training_progress_level: epoch
+training_progress_leave: false
+
+# Parallelism in the suite runner is multiprocessing-based.
+cpu_multiprocessing_workers: 1
+cpu_parallel_methods: []
+gpu_multiprocessing_workers: 1
+gpu_parallel_methods: [probabilistic_archetypal_ae]
+
+dataset:
+  name: custom_cytof
+  input_path: data/PDAC_Michael_normalized.h5ad
+  marker_columns: null
+  label_column: treatment
+  cell_id_column: cell_id
+  val_fraction: 0.15
+  test_fraction: 0.15
+
+preprocessing:
+  transform: none
+  arcsinh_cofactor: 5.0
+  normalization: none
+  clip_min: null
+  clip_max: null
+
+seeds: [42, 123, 456]
+
+method_order:
+  - probabilistic_archetypal_ae
+
+sweeps:
+  k_values: [4, 5, 6, 7, 8, 9, 10, 11, 12]
+  latent_dims: [4, 5, 6, 7, 8, 9, 10, 11, 12]
+
+methods:
+  probabilistic_archetypal_ae:
+    device: auto
+    hidden_dims: [512, 128]
+    dropout: 0.1
+    batch_size: 4096
+    lr: 1.0e-3
+    weight_decay: 1.0e-4
+    max_epochs: 3000
+    patience: 20
+    grad_clip: 1.0
+    entropy_reg_weight: 1.0e-3
+    diversity_reg_weight: 5.0e-3
+    variance_reg_weight: 1.0e-4
+
+marker_groups: {}
+
+secondary_dataset:
+  enabled: false
+
+auxiliary_models:
+  enabled: false
