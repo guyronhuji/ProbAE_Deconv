@@ -1,0 +1,68 @@
+# SCT Pearson Residuals — Gaussian Decoder K-Sweep
+#
+# Change `sample` to switch between PDX_02 and BCK_44.
+# The notebook builds all paths from this single field.
+#
+sample: "PDX_02"   # "PDX_02" | "BCK_44"
+
+data:
+  h5seurat_dir: "/Users/ronguy/Dropbox/Work/CyTOF/SingleCell/MOme_MPGMP/MultiOme/Output"
+
+hvg:
+  # Top N genes selected by SCTransform residual_variance (Seurat's own HVG ranking).
+  # 3000 matches SCTransform's default; lower values give a smaller, cleaner feature set.
+  n_top_genes: 3000
+
+sweep:
+  k_values: [4, 5, 6, 7, 8]
+  seeds: [42, 123, 456]
+
+# ── Training config ────────────────────────────────────────────────────────────
+dataset:
+  name: custom_cytof
+  # input_path is set by the notebook from `sample`
+  input_path: null
+  marker_columns: null
+  label_column: null
+  cell_id_column: cell_id
+  val_fraction: 0.15
+  test_fraction: 0.15
+
+preprocessing:
+  # SCT Pearson residuals are already ~N(0,1) per gene — no additional normalization
+  transform: "none"
+  normalization: "none"
+  clip_min: -10.0
+  clip_max: 10.0
+
+model:
+  type: "archetypal_autoencoder"
+  decoder_family: "gaussian"
+  n_archetypes: 5
+  encoder_hidden_dims: [512, 128]
+  activation: "relu"
+  dropout: 0.1
+  use_observed_library_size: false
+  size_factor_key: null
+  dispersion: "gene"
+
+loss:
+  type: "gaussian_nll"
+  entropy_reg_weight: 1.0e-3
+  diversity_reg_weight: 1.0e-3
+  variance_reg_weight: 0.0
+
+training:
+  batch_size: 1024
+  lr: 3.0e-4
+  weight_decay: 1.0e-4
+  max_epochs: 5000
+  patience: 20
+  grad_clip: 1.0
+  mixed_precision: false
+  progress_bar: true
+  progress_bar_leave: false
+
+output:
+  base_dir: null   # set by notebook: outputs/{sample}_sct_gaussian_k_sweep/runs
+  run_name: null
