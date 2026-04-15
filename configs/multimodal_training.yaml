@@ -1,0 +1,97 @@
+seed: 42
+device: auto
+
+modalities:
+  - name: cytf
+    input_path: data/multimodal/cytof.csv
+    marker_columns: null
+    obs_columns: [batch, treatment]
+    cell_id_column: cell_id
+    sample_id_column: sample_id
+    label_column: null
+    preprocessing:
+      transform: arcsinh
+      arcsinh_cofactor: 5.0
+      normalization: zscore
+      clip_min: null
+      clip_max: null
+    model:
+      decoder_family: gaussian
+      encoder_hidden_dims: [256, 128]
+      activation: relu
+      dropout: 0.1
+      dispersion: gene
+
+  - name: rna
+    input_path: data/multimodal/rna.csv
+    marker_columns: null
+    obs_columns: [batch, treatment]
+    cell_id_column: cell_id
+    sample_id_column: sample_id
+    label_column: null
+    preprocessing:
+      transform: none
+      arcsinh_cofactor: 5.0
+      normalization: zscore
+      clip_min: null
+      clip_max: null
+    model:
+      decoder_family: gaussian
+      encoder_hidden_dims: [512, 128]
+      activation: relu
+      dropout: 0.1
+      dispersion: gene
+
+split:
+  level: sample
+  val_fraction: 0.15
+  test_fraction: 0.15
+
+data:
+  encoder_input: log1p_normalized
+  decoder_target: raw_counts
+
+shared_latent:
+  n_archetypes: 8
+
+alignment:
+  mode: both
+  distance: l2
+  per_cell_weight: 1.0
+  per_sample_weight: 1.0
+  warmup_epochs: 10
+  cell_pairs_path: data/multimodal/cell_pairs.csv
+  left_modality: cytf
+  right_modality: rna
+  left_cell_id_column: left_cell_id
+  right_cell_id_column: right_cell_id
+  sample_id_column: sample_id
+  cell_batch_size: 256
+  sample_batch_size: 64
+  sample_max_cells_per_modality: 512
+
+loss:
+  reconstruction_weight: 1.0
+  modality_reconstruction_weights:
+    cytf: 1.0
+    rna: 1.0
+  entropy_reg_weight: 1.0e-3
+  diversity_reg_weight: 1.0e-3
+  variance_reg_weight: 1.0e-5
+
+training:
+  batch_size: 256
+  lr: 3.0e-4
+  weight_decay: 1.0e-4
+  max_epochs: 300
+  patience: 20
+  early_stopping_min_delta: 0.0
+  grad_clip: 1.0
+  mixed_precision: false
+  progress_bar: true
+  progress_bar_leave: false
+  progress_bar_desc: multimodal-pae
+
+output:
+  base_dir: outputs/multimodal
+  run_name: null
